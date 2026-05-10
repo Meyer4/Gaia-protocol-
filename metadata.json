@@ -1,0 +1,8 @@
+{
+  "name": "Gaia Protocol",
+  "description": "A decentralized World-Operating System unifying peer-to-peer networking, distributed AI modeling, and environmental sensors.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
