@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Globe2, 
   Network, 
+  Radar,
+  Code,
   BrainCircuit, 
   Activity, 
   ShieldAlert,
@@ -413,11 +415,15 @@ export default function App() {
     setWindows(prev => {
       const existing = prev.find(w => w.id === id);
       if (existing) {
-        return prev.map(w => w.id === id ? { ...w, isOpen: true, isMinimized: false, zIndex: maxZIndex + 1 } : w);
+        // If window exists, just focus it
+        const newZ = maxZIndex + 1;
+        setMaxZIndex(newZ);
+        return prev.map(w => w.id === id ? { ...w, isOpen: true, isMinimized: false, zIndex: newZ } : w);
       }
-      return [...prev, { id, title, icon, content, isOpen: true, isMinimized: false, isMaximized: false, zIndex: maxZIndex + 1 }];
+      const newZ = maxZIndex + 1;
+      setMaxZIndex(newZ);
+      return [...prev, { id, title, icon, content, isOpen: true, isMinimized: false, isMaximized: false, zIndex: newZ }];
     });
-    setMaxZIndex(prev => prev + 1);
   };
 
   const closeWindow = (id: string) => {
@@ -448,6 +454,26 @@ export default function App() {
       
       {/* Desktop Icons */}
       <div className="absolute inset-0 p-6 flex flex-col flex-wrap gap-6 items-start content-start z-10">
+        <DesktopIcon
+          icon={Radar}
+          label={t("Nmap GUI")}
+          onClick={() => openWindow('nmap', t('Pentest Tool'), Radar, <NmapView />)}
+        />
+        <DesktopIcon
+          icon={Code}
+          label={t("Code Lab")}
+          onClick={() => openWindow('codelab', t('Programmer Tool'), Code, <CodeLabView />)}
+        />
+        <DesktopIcon
+          icon={Monitor}
+          label={t("Sys Monitor")}
+          onClick={() => openWindow('sysmon', t('System Monitor'), Monitor, <SystemMonitorView globalStats={globalStats} />)}
+        />
+        <DesktopIcon
+          icon={HardDrive}
+          label={t("Files")}
+          onClick={() => openWindow('files', t('File Manager'), HardDrive, <FileManagerView />)}
+        />
         <DesktopIcon
           icon={Activity}
           label={t("Dashboard")}
@@ -587,6 +613,10 @@ export default function App() {
               {/* Apps List */}
               <div className="p-2 max-h-[400px] overflow-y-auto grid grid-cols-1 gap-1">
                 {[
+                  { id: 'files', icon: HardDrive, label: t('File Manager'), desc: 'Browse system assets', view: <FileManagerView /> },
+                  { id: 'sysmon', icon: Monitor, label: t('Sys Monitor'), desc: 'Real-time kernel telemetry', view: <SystemMonitorView globalStats={globalStats} /> },
+                  { id: 'codelab', icon: Code, label: t('Code Lab'), desc: 'Python/JS Script Editor', view: <CodeLabView /> },
+                  { id: 'nmap', icon: Radar, label: t('Nmap GUI'), desc: 'Advanced network reconnaissance', view: <NmapView /> },
                   { id: 'dashboard', icon: Activity, label: t('System Dashboard'), desc: 'Monitor network performance', view: <DashboardView peers={peers} computeRate={computeRate} earthquakes={earthquakes} nodeId={nodeId} hashHistory={hashHistory} eqError={eqError} globalStats={globalStats} networkEvents={networkEvents} /> },
                   { id: 'terminal', icon: TerminalIcon, label: t('Root Terminal'), desc: 'Execute system commands', view: <TerminalView peers={peers} nodeId={nodeId} computeRate={computeRate} networkEvents={networkEvents} /> },
                   { id: 'network', icon: Network, label: t('P2P Mesh Explorer'), desc: 'Visualize distributed nodes', view: <NetworkView peers={peers} nodeId={nodeId} /> },
@@ -924,40 +954,38 @@ function TerminalView({ peers, nodeId, computeRate, networkEvents }: any) {
     }
   }, [history]);
 
-  const handleCommand = (e: any) => {
+  const handleCommand = async (e: any) => {
     if (e.key === 'Enter') {
       const fullCmd = input.trim();
+      if (!fullCmd) return;
+
       const args = fullCmd.toLowerCase().split(' ');
       const cmd = args[0];
 
       setHistory(prev => [...prev, { type: 'input', text: `root@kali:~# ${fullCmd}` }]);
       setInput('');
-      
-      let response = '';
-      if (cmd === 'ls') {
-        response = 'bin  boot  dev  etc  home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var';
-      } else if (cmd === 'whoami') {
-        response = 'root';
-      } else if (cmd === 'clear') {
+
+      if (cmd === 'clear') {
         setHistory([]);
         return;
-      } else if (cmd === 'nmap') {
-        response = `Starting Nmap 7.93 ( https://nmap.org ) at ${new Date().toISOString()}\nNmap scan report for gaia.network (127.0.0.1)\nHost is up (0.000045s latency).\nNot shown: 998 closed tcp ports (reset)\nPORT     STATE SERVICE\n80/tcp   open  http\n443/tcp  open  https\n3000/tcp open  gaia-protocol\n\nNmap done: 1 IP address (1 host up) scanned in 0.08 seconds`;
-      } else if (cmd === 'uname') {
-        response = 'Linux kali 6.1.0-kali-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.27-1kali1 (2023-05-12) x86_64 GNU/Linux';
-      } else if (cmd === 'help') {
-        response = 'Available commands: ls, whoami, clear, nmap, uname, ifconfig, help, exit';
-      } else if (cmd === 'ifconfig') {
-        response = `eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.15  netmask 255.255.255.0  broadcast 192.168.1.255\n        inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>\n        ether 08:00:27:4e:66:a1  txqueuelen 1000  (Ethernet)\n        RX packets 150232  bytes 12453210 (11.8 MiB)\n        TX packets 98231  bytes 8543210 (8.1 MiB)\n\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n        inet 127.0.0.1  netmask 255.0.0.0\n        inet6 ::1  prefixlen 128  scopeid 0x10<host>\n        loop  txqueuelen 1000  (Local Loopback)`;
-      } else if (cmd === '') {
-        return;
-      } else {
-        response = `bash: ${cmd}: command not found`;
       }
 
-      setTimeout(() => {
-        setHistory(prev => [...prev, { type: 'output', text: response }]);
-      }, 50);
+      if (cmd === 'help') {
+        setHistory(prev => [...prev, { type: 'output', text: 'Available commands (Real Linux): ls, whoami, clear, nmap, uname, ifconfig, pwd, echo, curl, python3, node, grep, find, help' }]);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/terminal/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: fullCmd })
+        });
+        const data = await res.json();
+        setHistory(prev => [...prev, { type: 'output', text: data.output }]);
+      } catch (err) {
+        setHistory(prev => [...prev, { type: 'output', text: 'Terminal Error: Failed to connect to system kernel.' }]);
+      }
     }
   };
 
@@ -1095,6 +1123,266 @@ function NetworkView({ peers, nodeId }: any) {
        </div>
     </div>
   )
+}
+
+function NmapView() {
+  const [target, setTarget] = useState('127.0.0.1');
+  const [scanType, setScanType] = useState('-sV');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const runScan = async () => {
+    setLoading(true);
+    setOutput('Scanning target: ' + target + '...\n');
+    try {
+      const res = await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `nmap ${scanType} ${target}` })
+      });
+      const data = await res.json();
+      setOutput(data.output);
+    } catch (err) {
+      setOutput('Scan failed: Kernel communication error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+       <div className="flex items-center gap-3">
+          <Radar className="w-8 h-8 text-emerald-400" />
+          <h2 className="text-2xl font-bold">Nmap Pentest Suite</h2>
+       </div>
+
+       <Card className="bg-zinc-900/50 border-zinc-800/50">
+          <CardContent className="p-6 space-y-4">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                   <label className="text-sm font-medium text-zinc-400">Target IP / Domain</label>
+                   <input
+                     type="text"
+                     value={target}
+                     onChange={e => setTarget(e.target.value)}
+                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50"
+                   />
+                </div>
+                <div className="space-y-2">
+                   <label className="text-sm font-medium text-zinc-400">Scan Type</label>
+                   <select
+                     value={scanType}
+                     onChange={e => setScanType(e.target.value)}
+                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50"
+                   >
+                      <option value="-sV">Service Version Detection (-sV)</option>
+                      <option value="-sS">TCP SYN Scan (-sS)</option>
+                      <option value="-A">Aggressive Scan (-A)</option>
+                      <option value="-p-">All Ports Scan (-p-)</option>
+                   </select>
+                </div>
+             </div>
+             <button
+               onClick={runScan}
+               disabled={loading}
+               className="w-full py-2 bg-emerald-500 text-black font-bold rounded hover:bg-emerald-400 transition-colors disabled:opacity-50"
+             >
+                {loading ? "SCANNING..." : "EXECUTE NETWORK SCAN"}
+             </button>
+          </CardContent>
+       </Card>
+
+       <div className="bg-black border border-zinc-800 rounded p-4 font-mono text-sm text-emerald-400 h-[300px] overflow-auto whitespace-pre-wrap shadow-inner">
+          {output || "Awaiting scan instructions..."}
+       </div>
+    </div>
+  );
+}
+
+function CodeLabView() {
+  const [code, setCode] = useState('print("Hello from Kali Gaia OS!")\nimport sys\nprint(f"Python version: {sys.version}")');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const runCode = async () => {
+    setLoading(true);
+    setOutput('Executing script...\n');
+    try {
+      // For python execution via our limited API
+      const res = await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `python3 -c '${code.replace(/'/g, "'\\''")}'` })
+      });
+      const data = await res.json();
+      setOutput(data.output);
+    } catch (err) {
+      setOutput('Execution failed: Kernel communication error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 h-full flex flex-col">
+       <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <Code className="w-8 h-8 text-blue-400" />
+             <h2 className="text-2xl font-bold">Code Lab (Python 3)</h2>
+          </div>
+          <button
+            onClick={runCode}
+            disabled={loading}
+            className="px-6 py-2 bg-blue-500 text-white font-bold rounded hover:bg-blue-400 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+             <Play className="w-4 h-4" />
+             {loading ? "RUNNING..." : "RUN SCRIPT"}
+          </button>
+       </div>
+
+       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-[400px]">
+          <div className="flex flex-col border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950">
+             <div className="bg-zinc-900 px-4 py-2 text-xs font-mono text-zinc-500 border-b border-zinc-800">EDITOR</div>
+             <textarea
+               value={code}
+               onChange={e => setCode(e.target.value)}
+               className="flex-1 p-4 font-mono text-sm bg-transparent text-zinc-300 outline-none resize-none"
+               spellCheck={false}
+             />
+          </div>
+          <div className="flex flex-col border border-zinc-800 rounded-lg overflow-hidden bg-black shadow-inner">
+             <div className="bg-zinc-900 px-4 py-2 text-xs font-mono text-zinc-500 border-b border-zinc-800">OUTPUT</div>
+             <div className="flex-1 p-4 font-mono text-sm text-emerald-400 overflow-auto whitespace-pre-wrap">
+                {output || "Run a script to see output here..."}
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+}
+
+function SystemMonitorView({ globalStats }: any) {
+  const [topOutput, setTopOutput] = useState('');
+
+  useEffect(() => {
+    const fetchTop = async () => {
+      try {
+        const res = await fetch('/api/terminal/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: 'ls -l /proc' }) // Simulated top via file list since top is interactive
+        });
+        const data = await res.json();
+        setTopOutput(data.output);
+      } catch (err) {}
+    };
+    fetchTop();
+    const interval = setInterval(fetchTop, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="space-y-6">
+       <div className="flex items-center gap-3">
+          <Activity className="w-8 h-8 text-emerald-400" />
+          <h2 className="text-2xl font-bold">System Resources</h2>
+       </div>
+
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
+             <div className="text-xs font-bold text-zinc-500 uppercase">CPU LOAD</div>
+             <div className="text-2xl font-bold text-emerald-400">{globalStats?.serverOS?.cpuLoad || '0.00'}</div>
+          </Card>
+          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
+             <div className="text-xs font-bold text-zinc-500 uppercase">MEMORY USED</div>
+             <div className="text-2xl font-bold text-blue-400">{globalStats?.serverOS?.usedMemoryGB} GB</div>
+          </Card>
+          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
+             <div className="text-xs font-bold text-zinc-500 uppercase">PLATFORM</div>
+             <div className="text-lg font-bold text-zinc-300 uppercase">{globalStats?.serverOS?.platform}</div>
+          </Card>
+       </div>
+
+       <div className="bg-black border border-zinc-800 rounded-lg p-4 font-mono text-xs text-zinc-400 h-[300px] overflow-auto shadow-inner">
+          <div className="text-emerald-500 mb-2">GAIA_OS_KERNEL Processes:</div>
+          {topOutput || "Loading kernel process table..."}
+       </div>
+    </div>
+  );
+}
+
+function FileManagerView() {
+  const [files, setFiles] = useState<any[]>([]);
+  const [path, setPath] = useState('.');
+  const [content, setContent] = useState('');
+
+  const fetchFiles = async (newPath: string) => {
+    try {
+      const res = await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `ls -F ${newPath}` })
+      });
+      const data = await res.json();
+      const fileList = data.output.split('\n').filter((f: string) => f.trim()).map((f: string) => ({
+        name: f,
+        isDir: f.endsWith('/')
+      }));
+      setFiles(fileList);
+      setPath(newPath);
+    } catch (err) {}
+  };
+
+  const readFile = async (filename: string) => {
+    try {
+      const res = await fetch('/api/terminal/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: `cat ${path}/${filename}` })
+      });
+      const data = await res.json();
+      setContent(data.output);
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchFiles('.');
+  }, []);
+
+  return (
+    <div className="space-y-6 h-full flex flex-col">
+       <div className="flex items-center gap-3">
+          <HardDrive className="w-8 h-8 text-amber-400" />
+          <h2 className="text-2xl font-bold">File Explorer</h2>
+       </div>
+
+       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-1 border border-zinc-800 rounded-lg bg-zinc-950 p-2 overflow-auto">
+             <div className="text-xs font-mono text-zinc-500 mb-2 px-2 uppercase">Directory: {path}</div>
+             {files.map((f, i) => (
+               <button
+                 key={i}
+                 onClick={() => f.isDir ? fetchFiles(`${path}/${f.name.replace('/', '')}`) : readFile(f.name)}
+                 className="w-full text-left px-3 py-2 rounded hover:bg-white/5 flex items-center gap-2 group transition-colors"
+               >
+                  {f.isDir ? <Layers className="w-4 h-4 text-blue-400" /> : <FileText className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300" />}
+                  <span className="text-sm text-zinc-300 truncate">{f.name}</span>
+               </button>
+             ))}
+          </div>
+          <div className="lg:col-span-2 border border-zinc-800 rounded-lg bg-black p-4 font-mono text-xs text-zinc-400 overflow-auto shadow-inner">
+             {content ? (
+                <div className="whitespace-pre-wrap">{content}</div>
+             ) : (
+                <div className="flex flex-col items-center justify-center h-full text-zinc-600">
+                   <FileText className="w-12 h-12 mb-2 opacity-20" />
+                   <span>Select a file to preview its content.</span>
+                </div>
+             )}
+          </div>
+       </div>
+    </div>
+  );
 }
 
 function BrainView({ setComputeRate, computeRate }: any) {
