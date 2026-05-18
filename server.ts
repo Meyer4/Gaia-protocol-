@@ -205,7 +205,7 @@ Target persona: `;
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: promptText,
         config: { systemInstruction }
       });
@@ -244,7 +244,7 @@ Target persona: `;
       chatHistory.push({ role: 'user', parts: [{ text: message }] });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: chatHistory,
         config: { systemInstruction }
       });

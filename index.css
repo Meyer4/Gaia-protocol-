@@ -49,38 +49,25 @@
 }
 
 :root {
-    --background: oklch(0.05 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.1 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.1 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.8 0.1 160); /* Emerald hue */
-    --primary-foreground: oklch(0.1 0 0);
-    --secondary: oklch(0.2 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.15 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.15 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.5 0.2 27);
-    --border: oklch(0.2 0 0);
-    --input: oklch(0.2 0 0);
-    --ring: oklch(0.8 0.1 160);
-    --chart-1: oklch(0.8 0.1 160);
-    --chart-2: oklch(0.7 0.1 260);
-    --chart-3: oklch(0.6 0.1 360);
-    --chart-4: oklch(0.9 0.1 80);
-    --chart-5: oklch(0.5 0.1 200);
+    --background: #050505;
+    --foreground: #e0e0e0;
+    --card: #0a0a0c;
+    --card-foreground: #e0e0e0;
+    --popover: #0a0a0c;
+    --popover-foreground: #e0e0e0;
+    --primary: #00ffcc; /* Kali Teal */
+    --primary-foreground: #000000;
+    --secondary: #1a1a1c;
+    --secondary-foreground: #e0e0e0;
+    --muted: #1a1a1c;
+    --muted-foreground: #a0a0a0;
+    --accent: #00ffcc;
+    --accent-foreground: #000000;
+    --destructive: #ff3366;
+    --border: #222224;
+    --input: #1a1a1c;
+    --ring: #00ffcc;
     --radius: 0.5rem;
-    --sidebar: oklch(0.1 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.8 0.1 160);
-    --sidebar-primary-foreground: oklch(0.1 0 0);
-    --sidebar-accent: oklch(0.15 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.2 0 0);
-    --sidebar-ring: oklch(0.8 0.1 160);
 }
 
 @layer base {
@@ -89,8 +76,28 @@
     }
   body {
     @apply bg-background text-foreground;
+    scrollbar-width: thin;
+    scrollbar-color: #333 #050505;
     }
-  html {
-    @apply font-sans;
-    }
+}
+
+.resize {
+    resize: both;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #333;
 }
