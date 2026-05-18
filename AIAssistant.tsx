@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Mic, MicOff, X, Volume2, VolumeX, MessageSquare, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/card';
 import { useTranslation } from 'react-i18next';
 import { GoogleGenAI } from '@google/genai';
 
@@ -164,7 +164,7 @@ export function AIAssistant() {
       chatHistory.push({ role: 'user', parts: [{ text: messageText }] });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: chatHistory,
         config: { systemInstruction }
       });

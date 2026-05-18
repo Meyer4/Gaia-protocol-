@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import { exec } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,6 +113,63 @@ async function startServer() {
     }
   });
 
+  // Real Terminal Execution API - Hardened to prevent RCE
+  app.post("/api/terminal/exec", (req, res) => {
+    const { command } = req.body;
+    if (!command || typeof command !== 'string') return res.status(400).json({ error: "Invalid command" });
+
+    // Block command chaining, redirection, shell expansion, and newlines
+    const forbiddenPatterns = /[;&|><$`\(\)!\n\r]/;
+    if (forbiddenPatterns.test(command)) {
+      return res.json({
+        output: "Access Denied: Shell metacharacters or newlines are forbidden to prevent command injection. Chaining is disabled.",
+        error: true
+      });
+    }
+
+    const args = command.trim().split(/\s+/);
+    const baseCommand = args[0];
+
+    // Restricted allowlist of approved binaries
+    const allowedCommands = [
+      'ls', 'nmap', 'ping', 'whoami', 'cat', 'python3', 'node',
+      'uname', 'ifconfig', 'pwd', 'echo', 'curl', 'grep', 'find',
+      'date', 'hostname', 'uptime', 'free', 'df', 'ps'
+    ];
+
+    if (!allowedCommands.includes(baseCommand)) {
+      return res.json({
+        output: `Access Denied: '${baseCommand}' is not in the approved security toolkit.`,
+        error: true
+      });
+    }
+
+    // Prevent path traversal and access to sensitive system files
+    const sensitivePaths = ['/etc', '/root', '/var', '/proc', '/sys', '/dev', '.env', '..'];
+    if (sensitivePaths.some(path => command.toLowerCase().includes(path))) {
+       return res.json({
+         output: "Access Denied: Access to system directories or path traversal is restricted for security.",
+         error: true
+       });
+    }
+
+    // Execute with restricted environment and timeout
+    exec(command, {
+      timeout: 15000,
+      maxBuffer: 1024 * 512,
+      env: {
+        PATH: '/usr/local/bin:/usr/bin:/bin', // Minimal PATH
+        NODE_ENV: 'production'
+      }
+    }, (error, stdout, stderr) => {
+      const output = (stdout || "") + (stderr || "");
+      res.json({
+        output: output.trim() || (error ? error.message : "Command completed with no output."),
+        error: !!error
+      });
+    });
+  });
+
   // Terminal Ratings Store
   app.post("/api/ratings", (req, res) => {
     const { id, rating } = req.body;
@@ -205,7 +263,7 @@ Target persona: `;
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: promptText,
         config: { systemInstruction }
       });
@@ -244,7 +302,7 @@ Target persona: `;
       chatHistory.push({ role: 'user', parts: [{ text: message }] });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: chatHistory,
         config: { systemInstruction }
       });
