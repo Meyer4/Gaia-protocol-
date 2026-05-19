@@ -52,7 +52,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { MapIcon, Loader2 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { AIAssistant } from './AIAssistant';
 import { cn } from './utils';
 
@@ -835,13 +834,13 @@ function OutreachView({ settings }: { settings?: any }) {
     setGenerating(true);
     setPitch('');
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const promptText = `Write a compelling email pitch for Gaia Protocol. Target: ${target}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: promptText
+      const res = await fetch('/api/ai/pitch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, settings })
       });
-      setPitch(response.text || 'No response generated.');
+      const data = await res.json();
+      setPitch(data.text || 'No response generated.');
     } catch (err: any) {
       setPitch(`Error generating pitch: ${err.message}`);
     } finally {

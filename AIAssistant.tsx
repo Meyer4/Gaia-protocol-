@@ -3,7 +3,6 @@ import { Bot, Mic, MicOff, X, Volume2, VolumeX, MessageSquare, Loader2 } from 'l
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/card';
 import { useTranslation } from 'react-i18next';
-import { GoogleGenAI } from '@google/genai';
 
 export function AIAssistant() {
   const { t, i18n } = useTranslation();
@@ -153,23 +152,17 @@ export function AIAssistant() {
     setIsLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const systemInstruction = `You are Gaia, a highly capable AI assistant integrated into the Gaia Protocol dashboard. Your personality is professional, highly intelligent, and helpful—similar to top-tier AI assistants like Claude or Microsoft Copilot. You should always respond in the user's preferred spoken language: ${selectedLang}. Keep responses concise, clear, and natural to be spoken aloud by a text-to-speech engine.`;
-
-
-      const chatHistory = messages.slice(-10).map((h: any) => ({
-        role: h.role, // "user" or "model"
-        parts: [{ text: h.text }]
-      }));
-      chatHistory.push({ role: 'user', parts: [{ text: messageText }] });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: chatHistory,
-        config: { systemInstruction }
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageText,
+          language: selectedLang,
+          history: messages.slice(-10)
+        })
       });
-      
-      const responseText = response.text || "Sorry, I can't speak right now.";
+      const data = await res.json();
+      const responseText = data.text || "Sorry, I can't speak right now.";
       
       setMessages(prev => [...prev, { role: 'model', text: responseText }]);
       speak(responseText);
