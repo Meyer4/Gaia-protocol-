@@ -1,20 +1,13 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 import './i18n';
-import App from './App.tsx';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
+import App from './App.tsx';
 
-const updateSW = registerSW({
-  onNeedRefresh() {
-    // handled implicitly
-  },
-  onOfflineReady() {
-    console.log('App is ready to work offline');
-  },
-})
+const container = document.getElementById('root');
+if (!container) throw new Error('#root is missing from index.html');
 
-createRoot(document.getElementById('root')!).render(
+createRoot(container).render(
   <StrictMode>
     <App />
   </StrictMode>,

@@ -1,43 +1,39 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
-import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    plugins: [
-      react(), 
-      tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        devOptions: { enabled: true },
-        manifest: {
-          name: 'Gaia Protocol',
-          short_name: 'Gaia',
-          description: 'Decentralized World-Operating System',
-          theme_color: '#18181b', // zinc-950
-          icons: []
-        },
-        workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg}']
-        }
-      })
-    ],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GOOGLE_MAPS_PLATFORM_KEY': JSON.stringify(env.GOOGLE_MAPS_PLATFORM_KEY || ''),
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Build configuration.
+ *
+ * Note what is deliberately absent: no `define` block copying GEMINI_API_KEY
+ * or any other secret into the browser bundle. Secrets stay on the server and
+ * are reached through the /api proxies.
+ */
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(rootDir, '.'),
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-    },
-  };
+  },
+  server: {
+    host: process.env.HOST ?? '0.0.0.0',
+    port: Number(process.env.VITE_PORT ?? 5173),
+    allowedHosts: true,
+    hmr: process.env.DISABLE_HMR !== 'true',
+  },
+  preview: {
+    host: '0.0.0.0',
+    allowedHosts: true,
+  },
+  build: {
+    target: 'es2022',
+    outDir: 'dist',
+    sourcemap: false,
+    chunkSizeWarningLimit: 1200,
+  },
 });

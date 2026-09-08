@@ -1,8 +1,13 @@
 {
-  "name": "Gaia Protocol",
-  "description": "A decentralized World-Operating System unifying peer-to-peer networking, distributed AI modeling, and environmental sensors.",
+  "name": "Gaia Protocol — Node Console",
+  "description": "A decentralised compute node console: real SHA-256 proof of work verified server-side, Schnorr zero-knowledge identity proofs, live USGS seismic data and real kernel telemetry.",
   "requestFramePermissions": [
     "microphone"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "worker",
+    "canvas",
+    "sqlite-node-builtin",
+    "server-sent-events"
+  ]
 }

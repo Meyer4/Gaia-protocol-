@@ -1,1411 +1,428 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  Globe2, 
-  Network, 
-  Radar,
-  Code,
-  BrainCircuit, 
-  Activity, 
-  ShieldAlert,
-  Server,
-  Zap,
-  Terminal as TerminalIcon,
-  Search,
-  Eye,
-  Menu,
-  Fingerprint,
-  Lock,
-  CheckCircle2,
-  FileKey,
-  Play,
-  Settings,
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import {
+  Activity,
+  Blocks,
   BookOpen,
   Briefcase,
-  Mail,
-  FileText,
-  Send,
-  User,
-  Github,
-  Linkedin,
-  ExternalLink,
-  ThumbsUp,
-  ThumbsDown,
-  Cpu,
-  CircuitBoard,
-  X,
-  Minus,
-  Square,
-  Layers,
-  Clock,
-  ChevronRight,
-  Monitor,
+  Code2,
+  Fingerprint,
+  Globe2,
   HardDrive,
-  Settings as SystemSettings
+  LayoutGrid,
+  Menu,
+  Minus,
+  Monitor,
+  Network as NetworkIcon,
+  Radio,
+  Search,
+  Settings as SettingsIcon,
+  Square,
+  TerminalSquare,
+  UserRound,
+  X,
+  Zap,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/tabs';
-import { Badge } from '@/badge';
-import { Progress } from '@/progress';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/dialog';
-import { motion, AnimatePresence } from 'motion/react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
-import { MapIcon, Loader2 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+
+import { NetworkProvider, useNetwork } from '@/lib/network';
+import { formatHashrate, useSettings } from '@/lib/hooks';
 import { AIAssistant } from './AIAssistant';
-import { cn } from './utils';
+import { DashboardView } from '@/views/DashboardView';
+import { MinerView } from '@/views/MinerView';
+import { ZkpView } from '@/views/ZkpView';
+import { SensorsView } from '@/views/SensorsView';
+import { NetworkView } from '@/views/NetworkView';
+import { ConsoleView } from '@/views/ConsoleView';
+import { FilesView } from '@/views/FilesView';
+import { CodeLabView } from '@/views/CodeLabView';
+import { DiagnosticsView } from '@/views/DiagnosticsView';
+import { SystemMonitorView } from '@/views/SystemMonitorView';
+import { SettingsView } from '@/views/SettingsView';
+import { OutreachView } from '@/views/OutreachView';
+import { GuideView } from '@/views/GuideView';
+import { PortfolioView } from '@/views/PortfolioView';
+import { NetworkBackground } from '@/views/NetworkBackground';
+import { cn } from '@/utils';
 
-// --- Types ---
-
-type AppWindow = {
+interface WindowState {
   id: string;
   title: string;
   icon: any;
-  content: React.ReactNode;
-  isOpen: boolean;
-  isMinimized: boolean;
-  isMaximized: boolean;
-  zIndex: number;
-};
-
-// --- Background Component ---
-
-function NetworkBackground() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef({ x: -1000, y: -1000, radius: 250 });
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let particles: {x: number, y: number, vx: number, vy: number, size: number, isHub: boolean, pulseTimer: number, baseX: number, baseY: number}[] = [];
-    let animationFrameId: number;
-    let width = 0;
-    let height = 0;
-
-    const init = () => {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = width;
-      canvas.height = height;
-      
-      const particleCount = Math.min(Math.floor(width * height / 7000), 150);
-      particles = Array.from({ length: particleCount }).map(() => {
-        const isHub = Math.random() > 0.92;
-        const x = Math.random() * width;
-        const y = Math.random() * height;
-        return {
-          x, y,
-          baseX: x, baseY: y,
-          vx: (Math.random() - 0.5) * 0.6,
-          vy: (Math.random() - 0.5) * 0.6,
-          size: isHub ? Math.random() * 2 + 3 : Math.random() * 1.5 + 0.5,
-          isHub,
-          pulseTimer: Math.random() * Math.PI * 2
-        };
-      });
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseRef.current.x = e.clientX;
-      mouseRef.current.y = e.clientY;
-    };
-    
-    const handleMouseLeave = () => {
-      mouseRef.current.x = -1000;
-      mouseRef.current.y = -1000;
-    };
-    
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseleave', handleMouseLeave);
-
-    const draw = () => {
-      ctx.fillStyle = 'rgba(9, 9, 11, 0.2)';
-      ctx.fillRect(0, 0, width, height);
-
-      const mouse = mouseRef.current;
-
-      particles.forEach((p, i) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.pulseTimer += 0.03;
-
-        if (p.x < 0 || p.x > width) p.vx *= -1;
-        if (p.y < 0 || p.y > height) p.vy *= -1;
-
-        const dxMouse = mouse.x - p.x;
-        const dyMouse = mouse.y - p.y;
-        const distMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
-        
-        if (distMouse < mouse.radius) {
-          const forceDirectionX = dxMouse / distMouse;
-          const forceDirectionY = dyMouse / distMouse;
-          const force = (mouse.radius - distMouse) / mouse.radius;
-          const directionX = forceDirectionX * force * 5;
-          const directionY = forceDirectionY * force * 5;
-          
-          p.x -= directionX;
-          p.y -= directionY;
-          
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(mouse.x, mouse.y);
-          ctx.strokeStyle = `rgba(0, 255, 204, ${force * 0.4})`;
-          ctx.lineWidth = force * 1.5;
-          ctx.stroke();
-        }
-
-        const currentSize = p.isHub ? p.size + Math.sin(p.pulseTimer) * 1.5 : p.size;
-        
-        ctx.beginPath();
-        if (p.isHub) {
-          ctx.fillStyle = `rgba(0, 255, 204, ${0.4 + Math.sin(p.pulseTimer) * 0.2})`;
-          ctx.shadowBlur = 20;
-          ctx.shadowColor = 'rgba(0, 255, 204, 0.8)';
-        } else {
-          ctx.fillStyle = 'rgba(0, 255, 204, 0.4)';
-          ctx.shadowBlur = Math.sin(p.pulseTimer) * 5 > 0 ? 5 : 0;
-          ctx.shadowColor = 'rgba(0, 255, 204, 0.4)';
-        }
-        ctx.arc(p.x, p.y, Math.max(0.1, currentSize), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        for (let j = i + 1; j < particles.length; j++) {
-          const p2 = particles[j];
-          const dx = p.x - p2.x;
-          const dy = p.y - p2.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-
-          const maxDist = p.isHub || p2.isHub ? 220 : 120;
-
-          if (dist < maxDist) {
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p2.x, p2.y);
-            const opacity = (1 - dist / maxDist) * (p.isHub || p2.isHub ? 0.35 : 0.15);
-            ctx.strokeStyle = `rgba(0, 255, 204, ${opacity})`;
-            ctx.lineWidth = p.isHub || p2.isHub ? 1.5 : 0.5;
-            ctx.stroke();
-          }
-        }
-      });
-
-      animationFrameId = requestAnimationFrame(draw);
-    };
-
-    window.addEventListener('resize', init);
-    init();
-    draw();
-
-    return () => {
-      window.removeEventListener('resize', init);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseleave', handleMouseLeave);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-40 pointer-events-none mix-blend-screen bg-[#050505]" />;
+  x: number;
+  y: number;
+  z: number;
+  minimized: boolean;
+  maximized: boolean;
 }
 
-// --- Window Component ---
+interface AppDefinition {
+  id: string;
+  label: string;
+  description: string;
+  icon: any;
+  accent: string;
+  render: () => React.ReactNode;
+}
 
-function Window({
-  window,
-  onClose,
-  onMinimize,
-  onMaximize,
-  onFocus,
-  children
-}: {
-  window: AppWindow;
-  onClose: () => void;
-  onMinimize: () => void;
-  onMaximize: () => void;
-  onFocus: () => void;
-  children: React.ReactNode;
-}) {
-  const constraintsRef = useRef(null);
-
-  if (!window.isOpen || window.isMinimized) return null;
-
+export default function App() {
   return (
-    <motion.div
-      drag
-      dragMomentum={false}
-      onPointerDown={onFocus}
-      initial={{ scale: 0.9, opacity: 0 }}
-      animate={{
-        scale: 1,
-        opacity: 1,
-        top: window.isMaximized ? 0 : 'auto',
-        left: window.isMaximized ? 0 : 'auto',
-        width: window.isMaximized ? '100%' : '80%',
-        height: window.isMaximized ? 'calc(100vh - 48px)' : '70vh',
-      }}
-      className={cn(
-        "absolute flex flex-col bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden pointer-events-auto",
-        window.isMaximized ? "z-[100] inset-0" : "resize overflow-auto"
-      )}
-      style={{
-        zIndex: window.zIndex,
-        minWidth: '300px',
-        minHeight: '200px'
-      }}
-    >
-      {/* Window Header */}
-      <div
-        className="h-10 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4 cursor-move select-none sticky top-0 z-10"
-        onDoubleClick={onMaximize}
-      >
-        <div className="flex items-center gap-2">
-          <window.icon className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">{window.title}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onMinimize} className="p-1.5 hover:bg-zinc-800 rounded transition-colors">
-            <Minus className="w-3.5 h-3.5 text-zinc-500" />
-          </button>
-          <button onClick={onMaximize} className="p-1.5 hover:bg-zinc-800 rounded transition-colors">
-            <Square className="w-3.5 h-3.5 text-zinc-500" />
-          </button>
-          <button onClick={onClose} className="p-1.5 hover:bg-red-500/20 group rounded transition-colors">
-            <X className="w-3.5 h-3.5 text-zinc-500 group-hover:text-red-500" />
-          </button>
-        </div>
-      </div>
-
-      {/* Window Content */}
-      <div className="flex-1 overflow-auto p-6 bg-[#0a0a0c]">
-        {children}
-      </div>
-    </motion.div>
+    <NetworkProvider>
+      <Desktop />
+    </NetworkProvider>
   );
 }
 
-// --- Main App Component ---
+function Desktop() {
+  const { t } = useTranslation();
+  const { nodeId, miner, streamConnected, sensors, liveNodes, status } = useNetwork();
+  const [settings, patchSettings] = useSettings();
 
-export default function App() {
-  const { t, i18n } = useTranslation();
-  const [windows, setWindows] = useState<AppWindow[]>([]);
-  const [maxZIndex, setMaxZIndex] = useState(10);
-  const [isStartMenuOpen, setIsStartMenuOpen] = useState(false);
-  const [time, setTime] = useState(new Date());
+  const [windows, setWindows] = useState<WindowState[]>([]);
+  const [zTop, setZTop] = useState(10);
+  const [startOpen, setStartOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [clock, setClock] = useState(new Date());
+  const cascade = useRef(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    const timer = window.setInterval(() => setClock(new Date()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
-  
-  const nodeId = React.useMemo(() => {
-    const stored = localStorage.getItem('gaia_node_id');
-    if (stored) return stored;
-    const newId = Math.random().toString(36).substring(2, 9);
-    localStorage.setItem('gaia_node_id', newId);
-    return newId;
-  }, []);
-  
-  const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('gaia_settings');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
+
+  const apps = useMemo<AppDefinition[]>(
+    () => [
+      { id: 'dashboard', label: t('Dashboard'), description: 'Live node, host and ledger overview', icon: Activity, accent: 'text-emerald-400', render: () => <DashboardView /> },
+      { id: 'compute', label: t('Compute Engine'), description: 'Real proof-of-work mining, verified server-side', icon: Blocks, accent: 'text-emerald-400', render: () => <MinerView /> },
+      { id: 'zkp', label: t('Zero-Knowledge Proofs'), description: 'Schnorr proofs verified by the server', icon: Fingerprint, accent: 'text-purple-400', render: () => <ZkpView /> },
+      { id: 'sensors', label: t('Sensor Grid'), description: 'Live USGS seismic feed on a real map', icon: Globe2, accent: 'text-sky-400', render: () => <SensorsView /> },
+      { id: 'network', label: t('Network'), description: 'Node registry, mesh peers and epicentres', icon: NetworkIcon, accent: 'text-emerald-400', render: () => <NetworkView /> },
+      { id: 'console', label: t('Console'), description: 'Native read-only commands, no shell', icon: TerminalSquare, accent: 'text-emerald-400', render: () => <ConsoleView /> },
+      { id: 'sysmon', label: t('System Monitor'), description: 'Kernel CPU, memory, disk and processes', icon: Monitor, accent: 'text-amber-400', render: () => <SystemMonitorView /> },
+      { id: 'files', label: t('Files'), description: 'Real file browser over the node source', icon: HardDrive, accent: 'text-amber-400', render: () => <FilesView /> },
+      { id: 'codelab', label: t('Code Lab'), description: 'JavaScript executed in an isolated worker', icon: Code2, accent: 'text-sky-400', render: () => <CodeLabView /> },
+      { id: 'diagnostics', label: t('Net Diagnostics'), description: 'Real reachability and latency probes', icon: Radio, accent: 'text-sky-400', render: () => <DiagnosticsView /> },
+      { id: 'outreach', label: t('Outreach'), description: 'AI drafts archived in the node database', icon: Briefcase, accent: 'text-emerald-400', render: () => <OutreachView settings={settings} /> },
+      { id: 'guide', label: t('Guide'), description: 'What is real and what was removed', icon: BookOpen, accent: 'text-purple-400', render: () => <GuideView /> },
+      { id: 'profile', label: t('Profile'), description: 'Creator identity and live node stats', icon: UserRound, accent: 'text-emerald-400', render: () => <PortfolioView settings={settings} /> },
+      { id: 'settings', label: t('Settings'), description: 'Identity, language and AI provider', icon: SettingsIcon, accent: 'text-zinc-300', render: () => <SettingsView settings={settings} onChange={patchSettings} /> },
+    ],
+    [t, settings, patchSettings],
+  );
+
+  const openApp = useCallback(
+    (app: AppDefinition) => {
+      setStartOpen(false);
+      setQuery('');
+
+      setWindows((prev) => {
+        const existing = prev.find((w) => w.id === app.id);
+        const nextZ = zTop + 1;
+        setZTop(nextZ);
+
+        if (existing) {
+          return prev.map((w) => (w.id === app.id ? { ...w, minimized: false, z: nextZ } : w));
+        }
+
+        const step = cascade.current++ % 6;
+        return [
+          ...prev,
+          {
+            id: app.id,
+            title: app.label,
+            icon: app.icon,
+            x: 40 + step * 28,
+            y: 24 + step * 24,
+            z: nextZ,
+            minimized: false,
+            maximized: step === 0 && prev.length === 0,
+          },
+        ];
+      });
+    },
+    [zTop],
+  );
+
+  // Open the dashboard once, on first load.
+  useEffect(() => {
+    if (windows.length === 0) {
+      const dashboard = apps.find((app) => app.id === 'dashboard');
+      if (dashboard) openApp(dashboard);
     }
-    return {
-      showOutreach: true,
-      showPortfolio: true,
-      showGuide: true,
-      userName: 'George Meya',
-      userPhone1: '+265 991593725',
-      userPhone2: '+265 883991420',
-      jobTitle: 'Founder & Architect, Gaia Protocol'
-    };
-  });
-
-  useEffect(() => {
-    localStorage.setItem('gaia_settings', JSON.stringify(settings));
-  }, [settings]);
-
-  const [peers, setPeers] = useState<string[]>([]);
-  const [earthquakes, setEarthquakes] = useState<any[]>([]);
-  const [eqError, setEqError] = useState<string | null>(null);
-  const [computeRate, setComputeRate] = useState(0);
-  const [hashHistory, setHashHistory] = useState<any[]>(Array.from({ length: 20 }).map((_, i) => ({ time: i, hashes: 0 })));
-  const [globalStats, setGlobalStats] = useState<any>(null);
-  const [networkEvents, setNetworkEvents] = useState<any[]>([]);
-
-  useEffect(() => {
-    const eventSource = new EventSource('/api/stream');
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setNetworkEvents(prev => [data, ...prev].slice(0, 50));
-      } catch (err) {}
-    };
-    return () => eventSource.close();
-  }, []);
-
-  useEffect(() => {
-    fetch('/api/network/stats')
-      .then(r => r.json())
-      .then(d => setGlobalStats(d))
-      .catch(e => console.warn('Backend currently unreachable', e));
-  }, []);
-
-  useEffect(() => {
-    setHashHistory(prev => {
-      const newHistory = [...prev.slice(1), { time: prev[prev.length - 1].time + 1, hashes: computeRate }];
-      return newHistory;
-    });
-  }, [computeRate]);
-
-  useEffect(() => {
-    const channel = new BroadcastChannel('gaia-mesh');
-    channel.onmessage = (event) => {
-      const { type, sender, target } = event.data;
-      if (sender === nodeId) return;
-      if (type === 'hello') {
-        setPeers(p => !p.includes(sender) ? [...p, sender] : p);
-        channel.postMessage({ type: 'hello-ack', sender: nodeId, target: sender });
-      } else if (type === 'hello-ack' && target === nodeId) {
-        setPeers(p => !p.includes(sender) ? [...p, sender] : p);
-      } else if (type === 'peer-disconnect') {
-        setPeers(p => p.filter(id => id !== sender));
-      }
-    };
-    channel.postMessage({ type: 'hello', sender: nodeId });
-    const handleUnload = () => channel.postMessage({ type: 'peer-disconnect', sender: nodeId });
-    window.addEventListener('beforeunload', handleUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-      channel.close();
-    };
-  }, [nodeId]);
-
-  useEffect(() => {
-    const fetchEq = () => {
-      fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson')
-        .then(r => {
-          if (!r.ok) throw new Error("API Response not ok");
-          return r.json();
-        })
-        .then(d => { 
-          if (d.features) {
-            setEarthquakes(d.features); 
-            setEqError(null);
-          }
-        })
-        .catch((e) => {
-          console.error(e);
-          setEqError("Failed to sync seismic network.");
-        });
-    };
-    fetchEq();
-    const interval = setInterval(fetchEq, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const openWindow = (id: string, title: string, icon: any, content: React.ReactNode) => {
-    setIsStartMenuOpen(false);
-    setWindows(prev => {
-      const existing = prev.find(w => w.id === id);
-      if (existing) {
-        // If window exists, just focus it
-        const newZ = maxZIndex + 1;
-        setMaxZIndex(newZ);
-        return prev.map(w => w.id === id ? { ...w, isOpen: true, isMinimized: false, zIndex: newZ } : w);
-      }
-      const newZ = maxZIndex + 1;
-      setMaxZIndex(newZ);
-      return [...prev, { id, title, icon, content, isOpen: true, isMinimized: false, isMaximized: false, zIndex: newZ }];
-    });
-  };
-
-  const closeWindow = (id: string) => {
-    setWindows(prev => prev.map(w => w.id === id ? { ...w, isOpen: false } : w));
-  };
-
-  const minimizeWindow = (id: string) => {
-    setWindows(prev => prev.map(w => w.id === id ? { ...w, isMinimized: true } : w));
-  };
-
-  const toggleMaximizeWindow = (id: string) => {
-    setWindows(prev => prev.map(w => w.id === id ? { ...w, isMaximized: !w.isMaximized } : w));
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps.length]);
 
   const focusWindow = (id: string) => {
-    setWindows(prev => prev.map(w => w.id === id ? { ...w, zIndex: maxZIndex + 1, isMinimized: false } : w));
-    setMaxZIndex(prev => prev + 1);
+    const nextZ = zTop + 1;
+    setZTop(nextZ);
+    setWindows((prev) => prev.map((w) => (w.id === id ? { ...w, z: nextZ, minimized: false } : w)));
   };
 
-  // Default windows on load
+  const moveWindow = (id: string, x: number, y: number) => {
+    setWindows((prev) => prev.map((w) => (w.id === id ? { ...w, x, y } : w)));
+  };
+
+  const patchWindow = (id: string, patch: Partial<WindowState>) => {
+    setWindows((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  };
+
+  const closeWindow = (id: string) => setWindows((prev) => prev.filter((w) => w.id !== id));
+
   useEffect(() => {
-    openWindow('dashboard', t('Global Overview'), Activity, <DashboardView peers={peers} computeRate={computeRate} earthquakes={earthquakes} nodeId={nodeId} hashHistory={hashHistory} eqError={eqError} globalStats={globalStats} networkEvents={networkEvents} />);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setStartOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return apps;
+    return apps.filter((app) => `${app.label} ${app.description}`.toLowerCase().includes(needle));
+  }, [apps, query]);
+
   return (
-    <div className="h-screen w-screen bg-[#050505] text-zinc-100 font-sans overflow-hidden relative select-none">
+    <div className="h-screen w-screen overflow-hidden relative select-none bg-[#050505] text-zinc-100">
       <NetworkBackground />
-      
-      {/* Desktop Icons */}
-      <div className="absolute inset-0 p-6 flex flex-col flex-wrap gap-6 items-start content-start z-10">
-        <DesktopIcon
-          icon={Radar}
-          label={t("Nmap GUI")}
-          onClick={() => openWindow('nmap', t('Pentest Tool'), Radar, <NmapView />)}
-        />
-        <DesktopIcon
-          icon={Code}
-          label={t("Code Lab")}
-          onClick={() => openWindow('codelab', t('Programmer Tool'), Code, <CodeLabView />)}
-        />
-        <DesktopIcon
-          icon={Monitor}
-          label={t("Sys Monitor")}
-          onClick={() => openWindow('sysmon', t('System Monitor'), Monitor, <SystemMonitorView globalStats={globalStats} />)}
-        />
-        <DesktopIcon
-          icon={HardDrive}
-          label={t("Files")}
-          onClick={() => openWindow('files', t('File Manager'), HardDrive, <FileManagerView />)}
-        />
-        <DesktopIcon
-          icon={Activity}
-          label={t("Dashboard")}
-          onClick={() => openWindow('dashboard', t('Global Overview'), Activity, <DashboardView peers={peers} computeRate={computeRate} earthquakes={earthquakes} nodeId={nodeId} hashHistory={hashHistory} eqError={eqError} globalStats={globalStats} networkEvents={networkEvents} />)}
-        />
-        <DesktopIcon
-          icon={TerminalIcon}
-          label={t("Terminal")}
-          onClick={() => openWindow('terminal', t('Console'), TerminalIcon, <TerminalView peers={peers} nodeId={nodeId} computeRate={computeRate} networkEvents={networkEvents} />)}
-        />
-        <DesktopIcon
-          icon={Network}
-          label={t("Network")}
-          onClick={() => openWindow('network', t('P2P Network'), Network, <NetworkView peers={peers} nodeId={nodeId} />)}
-        />
-        <DesktopIcon
-          icon={BrainCircuit}
-          label={t("World Engine")}
-          onClick={() => openWindow('brain', t('World Engine'), BrainCircuit, <BrainView setComputeRate={setComputeRate} computeRate={computeRate} />)}
-        />
-        <DesktopIcon
-          icon={Fingerprint}
-          label={t("ZK Proofs")}
-          onClick={() => openWindow('zkp', t('Trust & ZK Proofs'), Fingerprint, <ZkpView />)}
-        />
-        <DesktopIcon
-          icon={ShieldAlert}
-          label={t("Seismic Grid")}
-          onClick={() => openWindow('senses', t('Sensor Grid'), Eye, <SensesView earthquakes={earthquakes} eqError={eqError} />)}
-        />
-        <DesktopIcon
-          icon={Settings}
-          label={t("Settings")}
-          onClick={() => openWindow('settings', t('Settings'), Settings, <SettingsView settings={settings} setSettings={setSettings} />)}
-        />
+
+      {/* Desktop icons */}
+      <div className="absolute inset-0 z-10 p-5 pb-16 flex flex-col flex-wrap gap-4 items-start content-start overflow-y-auto custom-scrollbar">
+        {apps.map((app) => (
+          <button
+            key={app.id}
+            onDoubleClick={() => openApp(app)}
+            onClick={() => openApp(app)}
+            className="group w-[86px] flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-white/5 transition-colors"
+          >
+            <div className="w-11 h-11 rounded-lg bg-zinc-900/70 backdrop-blur border border-zinc-800 flex items-center justify-center group-hover:border-emerald-500/50 group-hover:bg-emerald-500/10 transition-all">
+              <app.icon className={cn('w-5 h-5 text-zinc-400 group-hover:text-emerald-300', app.accent)} />
+            </div>
+            <span className="text-[10px] font-semibold text-zinc-400 group-hover:text-zinc-200 text-center leading-tight">{app.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Open Windows */}
-      <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
-        <div className="relative w-full h-full pointer-events-none">
-          {windows.map(win => (
-            <Window
+      {/* Windows */}
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {windows.map((win) => {
+          const app = apps.find((candidate) => candidate.id === win.id);
+          if (!app) return null;
+          return (
+            <AppWindow
               key={win.id}
-              window={win}
-              onClose={() => closeWindow(win.id)}
-              onMinimize={() => minimizeWindow(win.id)}
-              onMaximize={() => toggleMaximizeWindow(win.id)}
+              state={win}
               onFocus={() => focusWindow(win.id)}
+              onClose={() => closeWindow(win.id)}
+              onMinimize={() => patchWindow(win.id, { minimized: true })}
+              onMaximize={() => patchWindow(win.id, { maximized: !win.maximized })}
+              onMove={(x, y) => moveWindow(win.id, x, y)}
             >
-              {win.content}
-            </Window>
-          ))}
-        </div>
+              {app.render()}
+            </AppWindow>
+          );
+        })}
       </div>
 
       {/* Taskbar */}
-      <div className="absolute bottom-0 left-0 right-0 h-12 bg-zinc-950/80 backdrop-blur-md border-t border-zinc-800/50 flex items-center justify-between px-2 z-[200]">
-        <div className="flex items-center gap-1 h-full">
+      <div className="absolute bottom-0 inset-x-0 h-12 z-[300] bg-zinc-950/85 backdrop-blur-md border-t border-zinc-800/70 flex items-center justify-between px-2 gap-2">
+        <div className="flex items-center gap-1 h-full min-w-0 overflow-x-auto custom-scrollbar">
           <button
-            onClick={() => setIsStartMenuOpen(!isStartMenuOpen)}
-            className={cn(
-              "p-2 rounded hover:bg-zinc-800 transition-colors flex items-center gap-2",
-              isStartMenuOpen && "bg-zinc-800"
-            )}
+            onClick={() => setStartOpen((open) => !open)}
+            className={cn('p-2 rounded-md hover:bg-zinc-800 transition-colors', startOpen && 'bg-zinc-800')}
+            aria-label="Open the application menu"
           >
-            <div className="w-8 h-8 rounded bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50">
-               <Globe2 className="w-5 h-5 text-emerald-400" />
+            <div className="w-7 h-7 rounded bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center">
+              <LayoutGrid className="w-4 h-4 text-emerald-400" />
             </div>
           </button>
 
-          <div className="h-6 w-px bg-zinc-800 mx-1" />
+          <div className="h-6 w-px bg-zinc-800 mx-1 shrink-0" />
 
-          {windows.filter(w => w.isOpen).map(win => (
+          {windows.map((win) => (
             <button
               key={win.id}
-              onClick={() => win.isMinimized ? focusWindow(win.id) : minimizeWindow(win.id)}
+              onClick={() => (win.minimized ? focusWindow(win.id) : patchWindow(win.id, { minimized: true }))}
               className={cn(
-                "h-10 px-3 flex items-center gap-2 rounded transition-all border-b-2",
-                win.isMinimized ? "border-transparent text-zinc-500" : "border-emerald-500 bg-zinc-800/50 text-zinc-100",
-                !win.isMinimized && win.zIndex === maxZIndex && "bg-zinc-800"
+                'h-9 px-3 flex items-center gap-2 rounded-md transition-all border-b-2 shrink-0',
+                win.minimized ? 'border-transparent text-zinc-500' : 'border-emerald-500 bg-zinc-800/60 text-zinc-100',
               )}
             >
-              <win.icon className="w-4 h-4" />
-              <span className="text-xs font-medium hidden sm:block">{win.title}</span>
+              <win.icon className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium hidden sm:block max-w-[120px] truncate">{win.title}</span>
             </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-4 px-4">
-          <div className="flex items-center gap-2 text-zinc-400 text-xs font-mono">
-            <Zap className="w-3.5 h-3.5 text-emerald-400" />
-            {computeRate.toLocaleString()} H/s
+        <div className="flex items-center gap-3 px-2 shrink-0">
+          <Indicator label={streamConnected ? 'stream live' : 'stream down'} ok={streamConnected} />
+          <Indicator label={`${liveNodes} node(s)`} ok={liveNodes > 0} />
+          <Indicator label={`${sensors.features.length} eq`} ok={sensors.features.length > 0 || Boolean(sensors.error)} warn={Boolean(sensors.error)} />
+          <div className="hidden md:flex items-center gap-1.5 text-zinc-400 text-[11px] font-mono">
+            <Zap className={cn('w-3.5 h-3.5', miner.running ? 'text-emerald-400' : 'text-zinc-600')} />
+            {formatHashrate(miner.running ? miner.hashrate : 0)}
           </div>
-          <div className="flex items-center gap-2 text-zinc-400 text-xs font-mono border-l border-zinc-800 pl-4">
-            <Clock className="w-3.5 h-3.5" />
-            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <div className="hidden lg:flex items-center gap-1.5 text-zinc-500 text-[11px] font-mono">
+            <span className="text-emerald-500/70">{nodeId ? nodeId.slice(0, 8) : '—'}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-zinc-300 text-[11px] font-mono">
+            {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
         </div>
       </div>
 
-      {/* Start Menu */}
-      <AnimatePresence>
-        {isStartMenuOpen && (
-          <>
-            <div className="fixed inset-0 z-[190]" onClick={() => setIsStartMenuOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute bottom-14 left-2 w-96 bg-[#0a0a0c]/95 backdrop-blur-2xl border border-zinc-800/50 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[200] overflow-hidden"
-            >
-              {/* Header */}
-              <div className="p-6 bg-gradient-to-br from-zinc-900 to-black border-b border-zinc-800/50 flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30 relative">
-                  <div className="absolute inset-0 rounded-full bg-emerald-500/5 animate-pulse" />
-                  <User className="w-8 h-8 text-emerald-400 relative z-10" />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-zinc-100 tracking-tight">{settings.userName}</div>
-                  <div className="text-xs text-emerald-500/70 font-mono uppercase tracking-widest">{settings.jobTitle}</div>
-                </div>
+      {/* Start menu */}
+      {startOpen && (
+        <>
+          <div className="fixed inset-0 z-[290]" onClick={() => setStartOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.15 }}
+            className="absolute bottom-14 left-2 w-[340px] z-[300] rounded-xl border border-zinc-800/70 bg-[#0a0a0c]/95 backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden"
+          >
+            <div className="p-4 border-b border-zinc-800/60 bg-gradient-to-br from-zinc-900 to-black flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                <UserRound className="w-5 h-5 text-emerald-400" />
               </div>
-
-              {/* Search */}
-              <div className="p-4 border-b border-zinc-800/30">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Search applications..."
-                    className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg py-2 pl-10 pr-4 text-sm text-zinc-300 outline-none focus:border-emerald-500/30 transition-colors"
-                    autoFocus
-                  />
-                </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-zinc-100 truncate">{settings.userName}</div>
+                <div className="text-[10px] text-emerald-500/70 font-mono uppercase tracking-widest truncate">{settings.jobTitle}</div>
               </div>
-
-              {/* Apps List */}
-              <div className="p-2 max-h-[400px] overflow-y-auto grid grid-cols-1 gap-1">
-                {[
-                  { id: 'files', icon: HardDrive, label: t('File Manager'), desc: 'Browse system assets', view: <FileManagerView /> },
-                  { id: 'sysmon', icon: Monitor, label: t('Sys Monitor'), desc: 'Real-time kernel telemetry', view: <SystemMonitorView globalStats={globalStats} /> },
-                  { id: 'codelab', icon: Code, label: t('Code Lab'), desc: 'Python/JS Script Editor', view: <CodeLabView /> },
-                  { id: 'nmap', icon: Radar, label: t('Nmap GUI'), desc: 'Advanced network reconnaissance', view: <NmapView /> },
-                  { id: 'dashboard', icon: Activity, label: t('System Dashboard'), desc: 'Monitor network performance', view: <DashboardView peers={peers} computeRate={computeRate} earthquakes={earthquakes} nodeId={nodeId} hashHistory={hashHistory} eqError={eqError} globalStats={globalStats} networkEvents={networkEvents} /> },
-                  { id: 'terminal', icon: TerminalIcon, label: t('Root Terminal'), desc: 'Execute system commands', view: <TerminalView peers={peers} nodeId={nodeId} computeRate={computeRate} networkEvents={networkEvents} /> },
-                  { id: 'network', icon: Network, label: t('P2P Mesh Explorer'), desc: 'Visualize distributed nodes', view: <NetworkView peers={peers} nodeId={nodeId} /> },
-                  { id: 'brain', icon: BrainCircuit, label: t('AI World Engine'), desc: 'Distributed neural modeling', view: <BrainView setComputeRate={setComputeRate} computeRate={computeRate} /> },
-                  { id: 'senses', icon: Eye, label: t('Environmental Grid'), desc: 'Live seismic & sensor data', view: <SensesView earthquakes={earthquakes} eqError={eqError} /> },
-                  { id: 'zkp', icon: Fingerprint, label: t('ZK Trust Center'), desc: 'Verify cryptographic proofs', view: <ZkpView /> },
-                  { id: 'outreach', icon: Briefcase, label: t('Outreach Manager'), desc: 'Automated investor pitching', view: <OutreachView settings={settings} /> },
-                  { id: 'portfolio', icon: User, label: t('Developer Profile'), desc: 'View creator credentials', view: <PortfolioView settings={settings} /> },
-                  { id: 'settings', icon: SystemSettings, label: t('OS Settings'), desc: 'Configure system preferences', view: <SettingsView settings={settings} setSettings={setSettings} /> },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => openWindow(item.id, item.label, item.icon, item.view)}
-                    className="w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-emerald-500/5 group transition-all"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center group-hover:border-emerald-500/30 group-hover:bg-emerald-500/10 transition-colors">
-                      <item.icon className="w-5 h-5 text-zinc-500 group-hover:text-emerald-400" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-bold text-zinc-300 group-hover:text-emerald-400">{item.label}</div>
-                      <div className="text-[10px] text-zinc-500 group-hover:text-zinc-400">{item.desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 bg-black/40 border-t border-zinc-800/50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <button className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-emerald-400 transition-colors">
-                    <Lock className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-emerald-400 transition-colors">
-                    <Settings className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="text-[10px] font-mono text-zinc-600 tracking-tighter">KALI_GAIA_KERNEL_V0.9.4</div>
-                <button className="p-2 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-500 transition-colors">
-                  <Zap className="w-4 h-4" />
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      <AIAssistant />
-    </div>
-  );
-}
-
-function DesktopIcon({ icon: Icon, label, onClick }: { icon: any, label: string, onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-2 p-2 rounded hover:bg-white/5 transition-colors w-20 group"
-    >
-      <div className="w-12 h-12 rounded-lg bg-zinc-900/50 backdrop-blur-md border border-zinc-800 flex items-center justify-center group-hover:border-emerald-500/50 group-hover:bg-emerald-500/10 transition-all shadow-lg">
-        <Icon className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400" />
-      </div>
-      <span className="text-[10px] font-bold text-zinc-400 text-center uppercase tracking-wider drop-shadow-md group-hover:text-zinc-200">{label}</span>
-    </button>
-  );
-}
-
-// --- Sub-Views (Restored from original) ---
-
-function SettingsView({ settings, setSettings }: { settings: any, setSettings: any }) {
-  const { t, i18n } = useTranslation();
-  const [lang, setLang] = useState(i18n.language);
-
-  const changeLang = (l: string) => {
-    i18n.changeLanguage(l);
-    setLang(l);
-  };
-
-  return (
-    <div className="space-y-6">
-       <div className="flex items-center gap-2 mb-6">
-          <Settings className="w-6 h-6 text-emerald-400" />
-          <h2 className="text-2xl font-bold">{t("Settings Configuration")}</h2>
-       </div>
-
-       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         <div className="space-y-6">
-           <Card className="bg-zinc-900/50 border-zinc-800/50">
-              <CardHeader>
-                 <CardTitle>Global Identity</CardTitle>
-                 <CardDescription>Configure your presenter identity for pitching and outreach.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                 <div className="space-y-2">
-                   <label className="text-sm font-medium text-zinc-400">Display Name</label>
-                   <input 
-                     type="text" 
-                     value={settings.userName} 
-                     onChange={(e) => setSettings({...settings, userName: e.target.value})}
-                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50 transition-colors" 
-                   />
-                 </div>
-                 <div className="space-y-2">
-                   <label className="text-sm font-medium text-zinc-400">Job Title / Role</label>
-                   <input 
-                     type="text" 
-                     value={settings.jobTitle} 
-                     onChange={(e) => setSettings({...settings, jobTitle: e.target.value})}
-                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50 transition-colors" 
-                   />
-                 </div>
-              </CardContent>
-           </Card>
-         </div>
-
-         <div className="space-y-6">
-           <Card className="bg-zinc-900/50 border-zinc-800/50">
-              <CardHeader>
-                 <CardTitle>{t("Language & Localization")}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                 <div className="flex flex-col gap-4">
-                    <select 
-                      value={lang} 
-                      onChange={(e) => changeLang(e.target.value)} 
-                      className="bg-zinc-950 border border-zinc-800 rounded-md py-2 px-3 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 cursor-pointer text-zinc-200 w-full"
-                    >
-                       <option value="en">English</option>
-                       <option value="es">Español</option>
-                       <option value="fr">Français</option>
-                    </select>
-                 </div>
-              </CardContent>
-           </Card>
-         </div>
-       </div>
-    </div>
-  );
-}
-
-function GuideView() {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-6 max-w-4xl">
-       <div className="flex items-center gap-2 mb-6">
-          <BookOpen className="w-6 h-6 text-emerald-400" />
-          <h2 className="text-2xl font-bold">{t("Guide & Onboarding")}</h2>
-       </div>
-
-       <Card className="bg-zinc-900/50 border-zinc-800/50 overflow-hidden">
-          <div className="h-2 bg-purple-500 w-full" />
-          <CardHeader>
-             <CardTitle className="text-xl text-purple-400">{t("ZKP Explanation")}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-zinc-300">
-             <h3 className="text-lg font-medium text-zinc-100">{t("What is a Zero-Knowledge Proof?")}</h3>
-             <p>{t("zkp_body")}</p>
-          </CardContent>
-       </Card>
-    </div>
-  );
-}
-
-function PortfolioView({ settings }: { settings?: any }) {
-  const userName = settings?.userName || "George Meya";
-  const jobTitle = settings?.jobTitle || "Founder & Architect";
-
-  return (
-    <div className="space-y-6 max-w-5xl">
-       <div className="flex items-center gap-2 mb-6">
-          <User className="w-6 h-6 text-emerald-400" />
-          <h2 className="text-2xl font-bold">{userName}</h2>
-       </div>
-
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-zinc-900/50 border-zinc-800/50 md:col-span-1 border-t-emerald-500 border-t-2">
-             <CardContent className="p-6 flex flex-col items-center text-center space-y-4">
-                <div className="w-32 h-32 rounded-full bg-zinc-950 border-4 border-zinc-800 flex items-center justify-center overflow-hidden">
-                   <User className="w-16 h-16 text-zinc-600" />
-                </div>
-                <div>
-                   <h3 className="text-xl font-bold text-zinc-100">{userName}</h3>
-                   <p className="text-emerald-400 font-medium text-sm">{jobTitle}</p>
-                </div>
-             </CardContent>
-          </Card>
-
-          <Card className="bg-zinc-900/50 border-zinc-800/50 md:col-span-2">
-             <CardHeader>
-                <CardTitle>About my vision</CardTitle>
-             </CardHeader>
-             <CardContent className="space-y-4 text-zinc-300 leading-relaxed text-sm">
-                <p>
-                   Hi, I'm {userName}. I'm the creator of the Gaia Protocol and a passionate builder in Web3, DePIN, and AI architecture. 
-                </p>
-             </CardContent>
-          </Card>
-       </div>
-    </div>
-  );
-}
-
-function OutreachView({ settings }: { settings?: any }) {
-  const { t } = useTranslation();
-  const [pitch, setPitch] = useState('');
-  const [target, setTarget] = useState('dept_of_energy');
-  const [investorEmail, setInvestorEmail] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [history, setHistory] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetch('/api/pitches').then(r => r.json()).then(d => {
-      if(d.success && d.pitches) setHistory(d.pitches);
-    }).catch(() => {});
-  }, [pitch]);
-
-  const generatePitch = async () => {
-    setGenerating(true);
-    setPitch('');
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const promptText = `Write a compelling email pitch for Gaia Protocol. Target: ${target}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: promptText
-      });
-      setPitch(response.text || 'No response generated.');
-    } catch (err: any) {
-      setPitch(`Error generating pitch: ${err.message}`);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6 max-w-4xl">
-       <h2 className="text-2xl font-bold">{t("Commercial Outreach")}</h2>
-       <Card className="bg-zinc-900/50 border-zinc-800/50">
-          <CardContent className="pt-6 space-y-4">
-             <select
-               value={target}
-               onChange={(e) => setTarget(e.target.value)}
-               className="w-full bg-zinc-950 border border-zinc-800 rounded-md py-2 px-3 text-sm text-zinc-100"
-             >
-                <option value="dept_of_energy">Gov / Scientific Research</option>
-                <option value="depin_vc">DePIN / Web3 Venture Capital</option>
-                <option value="ai_enterprise">Enterprise AI Operations</option>
-             </select>
-             <button onClick={generatePitch} disabled={generating} className="w-full py-2 bg-emerald-500 text-black font-bold rounded">
-                {generating ? "Drafting..." : "Draft Email"}
-             </button>
-             {pitch && <div className="p-4 bg-zinc-950 border border-zinc-800 rounded text-sm text-zinc-300 whitespace-pre-wrap">{pitch}</div>}
-          </CardContent>
-       </Card>
-    </div>
-  );
-}
-
-function SensesView({ earthquakes, eqError }: { earthquakes: any[], eqError?: string | null }) {
-  const [selectedEq, setSelectedEq] = useState<any>(null);
-
-  return (
-    <div className="space-y-6">
-        <h2 className="text-2xl font-bold">Earth Sensor Grid</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-1 lg:col-span-2 h-[400px]">
-               <GoogleMapWrapper earthquakes={earthquakes} onMarkerClick={setSelectedEq} />
             </div>
-            <Card className="bg-zinc-900/50 border-zinc-800/50 overflow-y-auto h-[400px]">
-               <CardContent className="pt-6">
-                  <div className="space-y-4">
-                     {earthquakes.map((eq, i) => (
-                       <div key={i} onClick={() => setSelectedEq(eq)} className="p-3 bg-zinc-950 border border-zinc-800 rounded cursor-pointer">
-                          <div className="text-emerald-400 font-bold">MAG {eq.properties.mag?.toFixed(1)}</div>
-                          <div className="text-zinc-300 text-xs truncate">{eq.properties.place}</div>
-                       </div>
-                     ))}
+
+            <div className="p-3 border-b border-zinc-800/40">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search applications…"
+                  autoFocus
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg py-2 pl-9 pr-3 text-xs text-zinc-200 outline-none focus:border-emerald-500/40"
+                />
+              </div>
+            </div>
+
+            <div className="p-2 max-h-[320px] overflow-y-auto custom-scrollbar">
+              {filtered.length === 0 && <div className="p-4 text-center text-xs text-zinc-600">No application matches “{query}”.</div>}
+              {filtered.map((app) => (
+                <button
+                  key={app.id}
+                  onClick={() => openApp(app)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-emerald-500/5 transition-colors text-left"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+                    <app.icon className={cn('w-4 h-4', app.accent)} />
                   </div>
-               </CardContent>
-            </Card>
-        </div>
-    </div>
-  )
-}
-
-function GoogleMapWrapper({ earthquakes, onMarkerClick }: { earthquakes: any[], onMarkerClick: (eq: any) => void }) {
-  const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
-  if (!API_KEY) return <div className="w-full h-full bg-zinc-900 flex items-center justify-center text-zinc-500 font-mono">Google Maps Key Missing</div>;
-
-  return (
-    <APIProvider apiKey={API_KEY}>
-      <GoogleMap
-        defaultCenter={{ lat: 0, lng: 0 }}
-        defaultZoom={2}
-        style={{ width: '100%', height: '100%' }}
-      >
-        {earthquakes.map((eq, i) => (
-          <AdvancedMarker key={i} position={{ lat: eq.geometry.coordinates[1], lng: eq.geometry.coordinates[0] }} onClick={() => onMarkerClick(eq)}>
-            <Pin background="#10b981" />
-          </AdvancedMarker>
-        ))}
-      </GoogleMap>
-    </APIProvider>
-  );
-}
-
-function ZkpView() {
-  const [proofs, setProofs] = useState(0);
-  return (
-    <div className="space-y-6">
-       <h2 className="text-2xl font-bold">Cryptographic Primitives</h2>
-       <div className="grid grid-cols-2 gap-6">
-          <Card className="bg-zinc-900/50 border-zinc-800/50">
-             <CardContent className="p-6 text-center">
-                <div className="text-zinc-400 text-sm mb-1">Local Proofs</div>
-                <div className="text-3xl font-bold text-purple-400">{proofs}</div>
-                <button onClick={() => setProofs(p => p+1)} className="mt-4 px-4 py-2 bg-purple-500 text-white rounded">Generate Proof</button>
-             </CardContent>
-          </Card>
-       </div>
-    </div>
-  )
-}
-
-function TerminalView({ peers, nodeId, computeRate, networkEvents }: any) {
-  const [history, setHistory] = useState<any[]>([
-    { type: 'system', text: 'KALI GAIA OS v0.9.4 (kernel 6.1.0-kali-amd64)' },
-    { type: 'system', text: 'Last login: ' + new Date().toUTCString() + ' from 127.0.0.1' },
-    { type: 'system', text: ' ' },
-  ]);
-  const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [history]);
-
-  const handleCommand = async (e: any) => {
-    if (e.key === 'Enter') {
-      const fullCmd = input.trim();
-      if (!fullCmd) return;
-
-      const args = fullCmd.toLowerCase().split(' ');
-      const cmd = args[0];
-
-      setHistory(prev => [...prev, { type: 'input', text: `root@kali:~# ${fullCmd}` }]);
-      setInput('');
-
-      if (cmd === 'clear') {
-        setHistory([]);
-        return;
-      }
-
-      if (cmd === 'help') {
-        setHistory(prev => [...prev, { type: 'output', text: 'Available commands (Real Linux): ls, whoami, clear, nmap, uname, ifconfig, pwd, echo, curl, python3, node, grep, find, help' }]);
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/terminal/exec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: fullCmd })
-        });
-        const data = await res.json();
-        setHistory(prev => [...prev, { type: 'output', text: data.output }]);
-      } catch (err) {
-        setHistory(prev => [...prev, { type: 'output', text: 'Terminal Error: Failed to connect to system kernel.' }]);
-      }
-    }
-  };
-
-  return (
-    <div className="h-full flex flex-col font-mono text-sm bg-[#050505] p-4 rounded-lg border border-zinc-800 shadow-inner overflow-hidden">
-       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
-          {history.map((h, i) => (
-            <div key={i} className={cn(
-              h.type === 'input' ? 'text-[#00ffcc] font-bold' :
-              h.type === 'system' ? 'text-zinc-500' :
-              'text-zinc-300 whitespace-pre-wrap'
-            )}>
-              {h.text}
-            </div>
-          ))}
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-blue-400 font-bold whitespace-nowrap">root@kali:~#</span>
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleCommand}
-              className="flex-1 bg-transparent border-none outline-none text-[#00ffcc] caret-emerald-400"
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </div>
-       </div>
-    </div>
-  )
-}
-
-function DashboardView({ peers, computeRate, earthquakes, nodeId, hashHistory, eqError, globalStats, networkEvents }: any) {
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Mesh Nodes', value: (peers.length + 1).toString(), icon: Server },
-          { label: 'Hashrate', value: `${computeRate.toLocaleString()} H/s`, icon: Zap },
-          { label: 'Earthquakes', value: earthquakes.length.toString(), icon: ShieldAlert },
-          { label: 'Peers', value: peers.length.toString(), icon: Network },
-        ].map((stat, i) => (
-          <Card key={i} className="bg-zinc-900/50 border-zinc-800/50">
-            <CardContent className="p-6 flex items-center justify-between">
-               <div>
-                  <p className="text-xs font-bold uppercase text-zinc-500 mb-1">{stat.label}</p>
-                  <p className="text-2xl font-bold">{stat.value}</p>
-               </div>
-               <stat.icon className="w-8 h-8 text-emerald-500/20" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="col-span-2 bg-zinc-900/50 border-zinc-800/50">
-          <CardHeader>
-            <CardTitle className="text-sm uppercase tracking-widest text-zinc-400">Network Participation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={hashHistory}>
-                  <Area type="monotone" dataKey="hashes" stroke="#00ffcc" fill="#00ffcc22" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900/50 border-zinc-800/50">
-           <CardHeader><CardTitle className="text-sm uppercase tracking-widest text-zinc-400">Live Feed</CardTitle></CardHeader>
-           <CardContent className="space-y-3">
-              {networkEvents.slice(0, 5).map((e, i) => (
-                <div key={i} className="text-[10px] font-mono border-l-2 border-emerald-500 pl-2">
-                   <div className="text-zinc-500">{new Date(e.timestamp).toLocaleTimeString()}</div>
-                   <div className="text-zinc-300 truncate">{e.message}</div>
-                </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-zinc-300">{app.label}</div>
+                    <div className="text-[10px] text-zinc-600 truncate">{app.description}</div>
+                  </div>
+                </button>
               ))}
-           </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-import createGlobe from "cobe";
-
-function Globe() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    let phi = 0;
-    if (!canvasRef.current) return;
-    const globe = createGlobe(canvasRef.current, {
-      devicePixelRatio: 2,
-      width: 400 * 2,
-      height: 400 * 2,
-      phi: 0,
-      theta: 0,
-      dark: 1,
-      diffuse: 1.2,
-      mapSamples: 16000,
-      mapBrightness: 6,
-      baseColor: [0.1, 0.1, 0.1],
-      markerColor: [0.0, 1.0, 0.8],
-      glowColor: [0.0, 0.2, 0.2],
-      markers: [
-        { location: [37.7595, -122.4367], size: 0.03 },
-        { location: [-13.9626, 33.7741], size: 0.12 },
-      ],
-      onRender: (state: any) => {
-        state.phi = phi;
-        phi += 0.005;
-      },
-    } as any);
-
-    return () => globe.destroy();
-  }, []);
-
-  return <canvas ref={canvasRef} className="w-[300px] h-[300px] mx-auto opacity-60" />;
-}
-
-function NetworkView({ peers, nodeId }: any) {
-  return (
-    <div className="space-y-6 text-center">
-       <Globe />
-       <h2 className="text-2xl font-bold">Decentralized Mesh Visualization</h2>
-       <div className="flex justify-center gap-4">
-          {peers.map((p: string, i: number) => (
-            <div key={i} className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-emerald-400">
-               {p}
             </div>
-          ))}
-       </div>
-    </div>
-  )
-}
 
-function NmapView() {
-  const [target, setTarget] = useState('127.0.0.1');
-  const [scanType, setScanType] = useState('-sV');
-  const [output, setOutput] = useState('');
-  const [loading, setLoading] = useState(false);
+            <div className="p-3 bg-black/40 border-t border-zinc-800/60 flex items-center justify-between">
+              <span className="text-[9px] font-mono text-zinc-600 tracking-tight">
+                GAIA NODE v{status?.version ?? '1.0.0'} · {status?.host.platform ?? '—'}/{status?.host.arch ?? '—'}
+              </span>
+              <button
+                onClick={() => {
+                  setWindows([]);
+                  setStartOpen(false);
+                }}
+                className="text-[10px] text-zinc-500 hover:text-rose-400 flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Close all
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
 
-  const runScan = async () => {
-    setLoading(true);
-    setOutput('Scanning target: ' + target + '...\n');
-    try {
-      const res = await fetch('/api/terminal/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: `nmap ${scanType} ${target}` })
-      });
-      const data = await res.json();
-      setOutput(data.output);
-    } catch (err) {
-      setOutput('Scan failed: Kernel communication error.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      <AIAssistant settings={settings} />
 
-  return (
-    <div className="space-y-6">
-       <div className="flex items-center gap-3">
-          <Radar className="w-8 h-8 text-emerald-400" />
-          <h2 className="text-2xl font-bold">Nmap Pentest Suite</h2>
-       </div>
-
-       <Card className="bg-zinc-900/50 border-zinc-800/50">
-          <CardContent className="p-6 space-y-4">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                   <label className="text-sm font-medium text-zinc-400">Target IP / Domain</label>
-                   <input
-                     type="text"
-                     value={target}
-                     onChange={e => setTarget(e.target.value)}
-                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50"
-                   />
-                </div>
-                <div className="space-y-2">
-                   <label className="text-sm font-medium text-zinc-400">Scan Type</label>
-                   <select
-                     value={scanType}
-                     onChange={e => setScanType(e.target.value)}
-                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200 outline-none focus:border-emerald-500/50"
-                   >
-                      <option value="-sV">Service Version Detection (-sV)</option>
-                      <option value="-sS">TCP SYN Scan (-sS)</option>
-                      <option value="-A">Aggressive Scan (-A)</option>
-                      <option value="-p-">All Ports Scan (-p-)</option>
-                   </select>
-                </div>
-             </div>
-             <button
-               onClick={runScan}
-               disabled={loading}
-               className="w-full py-2 bg-emerald-500 text-black font-bold rounded hover:bg-emerald-400 transition-colors disabled:opacity-50"
-             >
-                {loading ? "SCANNING..." : "EXECUTE NETWORK SCAN"}
-             </button>
-          </CardContent>
-       </Card>
-
-       <div className="bg-black border border-zinc-800 rounded p-4 font-mono text-sm text-emerald-400 h-[300px] overflow-auto whitespace-pre-wrap shadow-inner">
-          {output || "Awaiting scan instructions..."}
-       </div>
+      {/* Mobile hint: the menu button doubles as navigation on small screens */}
+      <button
+        onClick={() => setStartOpen(true)}
+        className="md:hidden fixed bottom-14 right-4 z-[300] p-3 rounded-full bg-zinc-900 border border-zinc-800 text-emerald-400"
+        aria-label="Open the application menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
     </div>
   );
 }
 
-function CodeLabView() {
-  const [code, setCode] = useState('print("Hello from Kali Gaia OS!")\nimport sys\nprint(f"Python version: {sys.version}")');
-  const [output, setOutput] = useState('');
-  const [loading, setLoading] = useState(false);
+function Indicator({ label, ok, warn }: { label: string; ok: boolean; warn?: boolean }) {
+  return (
+    <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
+      <span className={cn('w-1.5 h-1.5 rounded-full', warn ? 'bg-amber-400' : ok ? 'bg-emerald-400' : 'bg-rose-500')} />
+      {label}
+    </div>
+  );
+}
 
-  const runCode = async () => {
-    setLoading(true);
-    setOutput('Executing script...\n');
-    try {
-      // For python execution via our limited API
-      const res = await fetch('/api/terminal/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: `python3 -c '${code.replace(/'/g, "'\\''")}'` })
-      });
-      const data = await res.json();
-      setOutput(data.output);
-    } catch (err) {
-      setOutput('Execution failed: Kernel communication error.');
-    } finally {
-      setLoading(false);
-    }
-  };
+function AppWindow({
+  state,
+  children,
+  onFocus,
+  onClose,
+  onMinimize,
+  onMaximize,
+  onMove,
+}: {
+  state: WindowState;
+  children: React.ReactNode;
+  onFocus: () => void;
+  onClose: () => void;
+  onMinimize: () => void;
+  onMaximize: () => void;
+  onMove: (x: number, y: number) => void;
+}) {
+  if (state.minimized) return null;
+
+  const width = state.maximized ? 'calc(100vw - 16px)' : 'min(1080px, calc(100vw - 24px))';
+  const height = state.maximized ? 'calc(100vh - 64px)' : 'min(720px, calc(100vh - 90px))';
 
   return (
-    <div className="space-y-6 h-full flex flex-col">
-       <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-             <Code className="w-8 h-8 text-blue-400" />
-             <h2 className="text-2xl font-bold">Code Lab (Python 3)</h2>
-          </div>
-          <button
-            onClick={runCode}
-            disabled={loading}
-            className="px-6 py-2 bg-blue-500 text-white font-bold rounded hover:bg-blue-400 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-             <Play className="w-4 h-4" />
-             {loading ? "RUNNING..." : "RUN SCRIPT"}
+    <motion.div
+      drag={!state.maximized}
+      dragMomentum={false}
+      dragElastic={0}
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1, x: state.maximized ? 0 : state.x, y: state.maximized ? 0 : state.y }}
+      onDragEnd={(_event, info) => onMove(state.x + info.offset.x, state.y + info.offset.y)}
+      onPointerDown={onFocus}
+      className={cn(
+        'absolute left-0 top-0 pointer-events-auto flex flex-col rounded-xl border border-zinc-800 bg-[#0a0a0c] shadow-[0_24px_60px_rgba(0,0,0,0.6)] overflow-hidden',
+        state.maximized ? 'left-2 top-2' : '',
+      )}
+      style={{ zIndex: state.z, width, height }}
+    >
+      <header
+        onDoubleClick={onMaximize}
+        className="h-10 shrink-0 flex items-center justify-between px-3 bg-zinc-900/80 border-b border-zinc-800 cursor-move"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <state.icon className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 truncate">{state.title}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onMinimize} className="p-1.5 rounded hover:bg-zinc-800 transition-colors" aria-label="Minimise">
+            <Minus className="w-3.5 h-3.5 text-zinc-500" />
           </button>
-       </div>
-
-       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-[400px]">
-          <div className="flex flex-col border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950">
-             <div className="bg-zinc-900 px-4 py-2 text-xs font-mono text-zinc-500 border-b border-zinc-800">EDITOR</div>
-             <textarea
-               value={code}
-               onChange={e => setCode(e.target.value)}
-               className="flex-1 p-4 font-mono text-sm bg-transparent text-zinc-300 outline-none resize-none"
-               spellCheck={false}
-             />
-          </div>
-          <div className="flex flex-col border border-zinc-800 rounded-lg overflow-hidden bg-black shadow-inner">
-             <div className="bg-zinc-900 px-4 py-2 text-xs font-mono text-zinc-500 border-b border-zinc-800">OUTPUT</div>
-             <div className="flex-1 p-4 font-mono text-sm text-emerald-400 overflow-auto whitespace-pre-wrap">
-                {output || "Run a script to see output here..."}
-             </div>
-          </div>
-       </div>
-    </div>
-  );
-}
-
-function SystemMonitorView({ globalStats }: any) {
-  const [topOutput, setTopOutput] = useState('');
-
-  useEffect(() => {
-    const fetchTop = async () => {
-      try {
-        const res = await fetch('/api/terminal/exec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: 'ls -l /proc' }) // Simulated top via file list since top is interactive
-        });
-        const data = await res.json();
-        setTopOutput(data.output);
-      } catch (err) {}
-    };
-    fetchTop();
-    const interval = setInterval(fetchTop, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="space-y-6">
-       <div className="flex items-center gap-3">
-          <Activity className="w-8 h-8 text-emerald-400" />
-          <h2 className="text-2xl font-bold">System Resources</h2>
-       </div>
-
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
-             <div className="text-xs font-bold text-zinc-500 uppercase">CPU LOAD</div>
-             <div className="text-2xl font-bold text-emerald-400">{globalStats?.serverOS?.cpuLoad || '0.00'}</div>
-          </Card>
-          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
-             <div className="text-xs font-bold text-zinc-500 uppercase">MEMORY USED</div>
-             <div className="text-2xl font-bold text-blue-400">{globalStats?.serverOS?.usedMemoryGB} GB</div>
-          </Card>
-          <Card className="bg-zinc-900/50 border-zinc-800/50 p-4">
-             <div className="text-xs font-bold text-zinc-500 uppercase">PLATFORM</div>
-             <div className="text-lg font-bold text-zinc-300 uppercase">{globalStats?.serverOS?.platform}</div>
-          </Card>
-       </div>
-
-       <div className="bg-black border border-zinc-800 rounded-lg p-4 font-mono text-xs text-zinc-400 h-[300px] overflow-auto shadow-inner">
-          <div className="text-emerald-500 mb-2">GAIA_OS_KERNEL Processes:</div>
-          {topOutput || "Loading kernel process table..."}
-       </div>
-    </div>
-  );
-}
-
-function FileManagerView() {
-  const [files, setFiles] = useState<any[]>([]);
-  const [path, setPath] = useState('.');
-  const [content, setContent] = useState('');
-
-  const fetchFiles = async (newPath: string) => {
-    try {
-      const res = await fetch('/api/terminal/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: `ls -F ${newPath}` })
-      });
-      const data = await res.json();
-      const fileList = data.output.split('\n').filter((f: string) => f.trim()).map((f: string) => ({
-        name: f,
-        isDir: f.endsWith('/')
-      }));
-      setFiles(fileList);
-      setPath(newPath);
-    } catch (err) {}
-  };
-
-  const readFile = async (filename: string) => {
-    try {
-      const res = await fetch('/api/terminal/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: `cat ${path}/${filename}` })
-      });
-      const data = await res.json();
-      setContent(data.output);
-    } catch (err) {}
-  };
-
-  useEffect(() => {
-    fetchFiles('.');
-  }, []);
-
-  return (
-    <div className="space-y-6 h-full flex flex-col">
-       <div className="flex items-center gap-3">
-          <HardDrive className="w-8 h-8 text-amber-400" />
-          <h2 className="text-2xl font-bold">File Explorer</h2>
-       </div>
-
-       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-1 border border-zinc-800 rounded-lg bg-zinc-950 p-2 overflow-auto">
-             <div className="text-xs font-mono text-zinc-500 mb-2 px-2 uppercase">Directory: {path}</div>
-             {files.map((f, i) => (
-               <button
-                 key={i}
-                 onClick={() => f.isDir ? fetchFiles(`${path}/${f.name.replace('/', '')}`) : readFile(f.name)}
-                 className="w-full text-left px-3 py-2 rounded hover:bg-white/5 flex items-center gap-2 group transition-colors"
-               >
-                  {f.isDir ? <Layers className="w-4 h-4 text-blue-400" /> : <FileText className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300" />}
-                  <span className="text-sm text-zinc-300 truncate">{f.name}</span>
-               </button>
-             ))}
-          </div>
-          <div className="lg:col-span-2 border border-zinc-800 rounded-lg bg-black p-4 font-mono text-xs text-zinc-400 overflow-auto shadow-inner">
-             {content ? (
-                <div className="whitespace-pre-wrap">{content}</div>
-             ) : (
-                <div className="flex flex-col items-center justify-center h-full text-zinc-600">
-                   <FileText className="w-12 h-12 mb-2 opacity-20" />
-                   <span>Select a file to preview its content.</span>
-                </div>
-             )}
-          </div>
-       </div>
-    </div>
-  );
-}
-
-function BrainView({ setComputeRate, computeRate }: any) {
-  const [computing, setComputing] = useState(false);
-
-  useEffect(() => {
-    if (!computing) { setComputeRate(0); return; }
-    const i = setInterval(() => setComputeRate(Math.floor(Math.random() * 100000)), 1000);
-    return () => clearInterval(i);
-  }, [computing]);
-
-  return (
-    <div className="space-y-6">
-       <h2 className="text-2xl font-bold">World Engine</h2>
-       <Card className="bg-zinc-900/50 border-zinc-800/50 p-12 text-center">
-          <BrainCircuit className={cn("w-16 h-16 mx-auto mb-6", computing ? "text-emerald-400 animate-pulse" : "text-zinc-700")} />
-          <button
-            onClick={() => setComputing(!computing)}
-            className={cn("px-8 py-3 rounded-full font-bold transition-all", computing ? "bg-red-500 text-white" : "bg-emerald-500 text-black")}
-          >
-            {computing ? "Stop Computation" : "Start Global Job"}
+          <button onClick={onMaximize} className="p-1.5 rounded hover:bg-zinc-800 transition-colors" aria-label="Maximise">
+            <Square className="w-3.5 h-3.5 text-zinc-500" />
           </button>
-       </Card>
-    </div>
-  )
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-rose-500/20 transition-colors group" aria-label="Close">
+            <X className="w-3.5 h-3.5 text-zinc-500 group-hover:text-rose-400" />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-5">{children}</div>
+    </motion.div>
+  );
 }
