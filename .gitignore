@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Real runtime state produced by the node (SQLite + WAL sidecars)
+data/
+*.db
+*.db-shm
+*.db-wal
+gaia-world.db

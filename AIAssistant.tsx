@@ -1,323 +1,300 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Mic, MicOff, X, Volume2, VolumeX, MessageSquare, Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/card';
-import { useTranslation } from 'react-i18next';
-import { GoogleGenAI } from '@google/genai';
+import { Bot, Loader2, MessageSquare, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
+import { api, type ConfigResponse } from '@/lib/api';
+import { usePoll } from '@/lib/hooks';
+import { useNetwork } from '@/lib/network';
+import type { Settings } from '@/lib/hooks';
+import { cn } from '@/utils';
 
-export function AIAssistant() {
-  const { t, i18n } = useTranslation();
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<{role: string, text: string}[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+interface Message {
+  role: 'user' | 'model';
+  text: string;
+  model?: string;
+}
+
+const VOICE_LANGUAGES = [
+  { value: 'en-US', label: 'English' },
+  { value: 'es-ES', label: 'Español' },
+  { value: 'fr-FR', label: 'Français' },
+  { value: 'de-DE', label: 'Deutsch' },
+  { value: 'pt-BR', label: 'Português' },
+  { value: 'zh-CN', label: '中文' },
+  { value: 'ja-JP', label: '日本語' },
+  { value: 'hi-IN', label: 'हिन्दी' },
+  { value: 'ar-SA', label: 'العربية' },
+];
+
+/**
+ * The assistant talks to the node's Gemini proxy. Speech input and output use
+ * the browser's real Web Speech APIs. When the provider is unreachable the
+ * assistant reports the upstream error instead of inventing an answer.
+ */
+export function AIAssistant({ settings }: { settings: Settings }) {
+  const { status, miner, nodeId } = useNetwork();
+  const config = usePoll<ConfigResponse>(() => api.config(), 60_000);
+
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useState(navigator.language || 'en-US');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [selectedLang, setSelectedLang] = useState(navigator.language || 'en-US');
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const synthesisRef = useRef<SpeechSynthesis | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+
+  const aiReady = Boolean(config.data?.ai.configured) || Boolean(settings.geminiKey.trim());
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, busy]);
+
+  useEffect(() => {
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = language;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results?.[0]?.[0]?.transcript;
+      if (transcript) void send(transcript);
     };
-  }, []);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      synthesisRef.current = window.speechSynthesis;
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.interimResults = true;
-        
-        recognitionRef.current.onstart = () => {
-          setIsListening(true);
-        };
-        
-        recognitionRef.current.onresult = (event: any) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-          
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-          
-          if (finalTranscript) {
-            setInputText(finalTranscript);
-            handleSendMessage(finalTranscript);
-          } else if (interimTranscript) {
-            setInputText(interimTranscript);
-          }
-        };
-        
-        recognitionRef.current.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error);
-          setIsListening(false);
-        };
-        
-        recognitionRef.current.onend = () => {
-          setIsListening(false);
-        };
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.lang = selectedLang;
-    }
-  }, [selectedLang]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    recognitionRef.current = recognition;
+    return () => {
+      recognitionRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   const speak = (text: string) => {
-    if (!voiceEnabled || !synthesisRef.current) return;
-    
-    // Stop any ongoing speech
-    synthesisRef.current.cancel();
+    if (!voiceEnabled || typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Try to find a good voice for the current language
-    const voices = synthesisRef.current.getVoices();
-    const lang = selectedLang;
-    
-    const preferredVoice = voices.find(v => v.lang.startsWith(lang) && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium'))) 
-                        || voices.find(v => v.lang.startsWith(lang))
-                        || voices.find(v => v.lang.startsWith('en'));
+    const voices = window.speechSynthesis.getVoices();
+    const preferred =
+      voices.find((voice) => voice.lang === language) ??
+      voices.find((voice) => voice.lang.startsWith(language.split('-')[0])) ??
+      voices.find((voice) => voice.lang.startsWith('en'));
+    if (preferred) utterance.voice = preferred;
 
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
-    
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    synthesisRef.current.speak(utterance);
-  };
-
-  const toggleListen = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-    } else {
-      try {
-        // Cancel any ongoing speaking before listening
-        if (synthesisRef.current?.speaking) {
-          synthesisRef.current.cancel();
-        }
-        recognitionRef.current?.start();
-      } catch (e) {}
-    }
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
   };
 
   const stopSpeaking = () => {
-    synthesisRef.current?.cancel();
-    setIsSpeaking(false);
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
   };
 
-  const handleSendMessage = async (textToUse?: string) => {
-    const messageText = textToUse || inputText;
-    if (!messageText.trim()) return;
-
-    if (isOffline) {
-      setMessages(prev => [...prev, { role: 'model', text: "I'm sorry, I am not available offline. Please check your internet connection." }]);
-      setInputText('');
-      speak("I'm sorry, I am not available offline. Please check your internet connection.");
+  const toggleListening = () => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+    if (listening) {
+      recognition.stop();
+      setListening(false);
       return;
     }
-
-    const newMessages = [...messages, { role: 'user', text: messageText }];
-    setMessages(newMessages);
-    setInputText('');
-    setIsLoading(true);
-
+    stopSpeaking();
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const systemInstruction = `You are Gaia, a highly capable AI assistant integrated into the Gaia Protocol dashboard. Your personality is professional, highly intelligent, and helpful—similar to top-tier AI assistants like Claude or Microsoft Copilot. You should always respond in the user's preferred spoken language: ${selectedLang}. Keep responses concise, clear, and natural to be spoken aloud by a text-to-speech engine.`;
-
-
-      const chatHistory = messages.slice(-10).map((h: any) => ({
-        role: h.role, // "user" or "model"
-        parts: [{ text: h.text }]
-      }));
-      chatHistory.push({ role: 'user', parts: [{ text: messageText }] });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: chatHistory,
-        config: { systemInstruction }
-      });
-      
-      const responseText = response.text || "Sorry, I can't speak right now.";
-      
-      setMessages(prev => [...prev, { role: 'model', text: responseText }]);
-      speak(responseText);
-    } catch (error: any) {
-      console.error(error);
-      setMessages(prev => [...prev, { role: 'model', text: `Sorry, an error occurred: ${error.message}` }]);
-    } finally {
-      setIsLoading(false);
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
     }
   };
+
+  const send = async (textOverride?: string) => {
+    const text = (textOverride ?? input).trim();
+    if (!text || busy) return;
+
+    setError(null);
+    setInput('');
+    const history = messagesRef.current.slice(-10).map((message) => ({ role: message.role, text: message.text }));
+    setMessages((prev) => [...prev, { role: 'user', text }]);
+    setBusy(true);
+
+    try {
+      const response = await api.chat({
+        message: text,
+        language,
+        history,
+        apiKey: settings.geminiKey.trim() || undefined,
+      });
+      setMessages((prev) => [...prev, { role: 'model', text: response.text, model: response.model }]);
+      speak(response.text);
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      setError(message);
+      setMessages((prev) => [...prev, { role: 'model', text: `Provider error: ${message}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const liveContext = status
+    ? `${status.network.liveNodes} live node(s), ${status.ledger.blocks} verified block(s), ${status.zkp.valid} valid ZK proof(s).`
+    : 'Waiting for the first status read.';
 
   return (
     <>
-      {/* Floating Button */}
-      <motion.button
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 p-4 rounded-full shadow-lg z-50 flex items-center justify-center transition-all duration-500
-          ${isSpeaking ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-emerald-400 hover:bg-zinc-700 border border-zinc-700'}
-          ${isOpen ? 'hidden' : 'block'}
-        `}
-      >
-        <Bot className={`w-7 h-7 ${isSpeaking ? 'animate-pulse' : ''}`} />
-      </motion.button>
-
-      {/* Chat Window */}
       <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="fixed bottom-6 right-6 w-80 sm:w-96 h-[500px] z-50 flex flex-col shadow-2xl"
+        {!open && (
+          <motion.button
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            onClick={() => setOpen(true)}
+            className={cn(
+              'fixed bottom-16 right-5 z-[400] p-4 rounded-full border shadow-lg transition-colors',
+              speaking ? 'bg-emerald-500 text-black border-emerald-400' : 'bg-zinc-900 text-emerald-400 border-zinc-800 hover:border-emerald-500/50',
+            )}
+            aria-label="Open the assistant"
           >
-            <Card className="flex-1 flex flex-col bg-zinc-950/95 backdrop-blur-xl border border-zinc-800 shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden">
-              <CardHeader className="p-4 border-b border-zinc-800 flex flex-row items-center justify-between pb-4 space-y-0">
-                <CardTitle className="text-lg font-bold flex items-center gap-2 text-zinc-100">
-                  <Bot className={`w-5 h-5 ${isSpeaking ? 'text-emerald-400 animate-pulse' : 'text-zinc-400'}`} />
-                  Gaia {isOffline && <span className="text-xs text-rose-500 font-normal ml-2 border border-rose-500/50 rounded-full px-2 py-0.5 bg-rose-500/10">Offline</span>}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={selectedLang}
-                    onChange={(e) => setSelectedLang(e.target.value)}
-                    className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs rounded-md px-2 py-1 outline-none"
-                  >
-                    <option value="en-US">English</option>
-                    <option value="es-ES">Español</option>
-                    <option value="fr-FR">Français</option>
-                    <option value="de-DE">Deutsch</option>
-                    <option value="zh-CN">中文</option>
-                    <option value="ja-JP">日本語</option>
-                    <option value="hi-IN">हिन्दी</option>
-                    <option value="ny-MW">Chichewa</option>
-                    <option value="ar-SA">العربية</option>
-                  </select>
-                  <button 
-                    onClick={() => setVoiceEnabled(!voiceEnabled)}
-                    className={`p-1.5 rounded-md hover:bg-zinc-800 transition-colors ${voiceEnabled ? 'text-emerald-400' : 'text-zinc-500'}`}
-                    title={voiceEnabled ? "Voice Enabled" : "Voice Disabled"}
-                  >
-                    {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                  </button>
-                  <button 
-                    onClick={() => setIsOpen(false)}
-                    className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </CardHeader>
-              
-              <CardContent className="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar">
-                {messages.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-50">
-                    <MessageSquare className="w-10 h-10 text-emerald-500" />
-                    <p className="text-sm font-medium text-zinc-300">How can I help you manage the network today?</p>
-                  </div>
-                )}
-                
-                {messages.map((msg, i) => (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={i} 
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div 
-                      className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm ${
-                        msg.role === 'user' 
-                          ? 'bg-emerald-600 text-white rounded-br-sm' 
-                          : 'bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-bl-sm'
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  </motion.div>
-                ))}
-                {isLoading && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-                    <div className="bg-zinc-800 border border-zinc-700 rounded-2xl rounded-bl-sm px-4 py-2 flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-                      <span className="text-xs text-zinc-400 font-medium">Processing...</span>
-                    </div>
-                  </motion.div>
-                )}
-                <div ref={messagesEndRef} />
-              </CardContent>
+            <Bot className={cn('w-6 h-6', speaking && 'animate-pulse')} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
-              <CardFooter className="p-3 border-t border-zinc-800 flex items-center gap-2 bg-zinc-950">
-                {isSpeaking && (
-                   <button
-                     onClick={stopSpeaking}
-                     className="absolute -top-12 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-rose-400 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 hover:bg-zinc-700 transition-colors shadow-lg z-10"
-                   >
-                     <VolumeX className="w-3 h-3" /> Stop Speaking
-                   </button>
-                )}
-                
-                <button
-                  onClick={toggleListen}
-                  className={`p-2.5 rounded-full flex-shrink-0 transition-all duration-300 ${
-                    isListening 
-                      ? 'bg-red-500/20 text-red-500 border border-red-500/50 animate-pulse' 
-                      : 'bg-zinc-800 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-700'
-                  }`}
-                  disabled={isLoading}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.97 }}
+            transition={{ duration: 0.18 }}
+            className="fixed bottom-16 right-5 z-[400] w-[min(380px,calc(100vw-24px))] h-[min(560px,calc(100vh-96px))] flex flex-col rounded-xl border border-zinc-800 bg-[#0a0a0c]/97 backdrop-blur-xl shadow-[0_24px_60px_rgba(0,0,0,0.6)] overflow-hidden"
+          >
+            <header className="p-3 border-b border-zinc-800 flex items-center justify-between gap-2 bg-zinc-900/60">
+              <div className="flex items-center gap-2 min-w-0">
+                <Bot className={cn('w-4 h-4 shrink-0', speaking ? 'text-emerald-400 animate-pulse' : 'text-zinc-400')} />
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-zinc-100">Gaia assistant</div>
+                  <div className="text-[10px] font-mono text-zinc-600 truncate">
+                    {config.data?.ai.model ?? (aiReady ? 'model resolves on first call' : 'provider not configured')}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <select
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-1 text-[10px] text-zinc-300 outline-none"
                 >
-                  {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                  {VOICE_LANGUAGES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setVoiceEnabled((enabled) => !enabled)}
+                  className={cn('p-1.5 rounded hover:bg-zinc-800', voiceEnabled ? 'text-emerald-400' : 'text-zinc-600')}
+                  aria-label="Toggle voice output"
+                >
+                  {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                 </button>
-                
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSendMessage();
-                  }}
-                  placeholder="Ask Gaia anything..."
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 transition-colors"
-                  disabled={isLoading}
-                />
-              </CardFooter>
-            </Card>
+                <button onClick={() => setOpen(false)} className="p-1.5 rounded hover:bg-zinc-800 text-zinc-500" aria-label="Close">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+              {messages.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-4">
+                  <MessageSquare className="w-8 h-8 text-emerald-500/60" />
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Ask about the live state of this node — verified blocks, zero-knowledge proofs, host load or the seismic feed.
+                  </p>
+                  <p className="text-[10px] font-mono text-zinc-600">{liveContext}</p>
+                  {!aiReady && (
+                    <p className="text-[10px] text-amber-400 border border-amber-500/30 rounded px-2 py-1">
+                      No Gemini key configured — add one in Settings or set GEMINI_API_KEY on the server.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {messages.map((message, index) => (
+                <div key={index} className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
+                  <div
+                    className={cn(
+                      'max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap',
+                      message.role === 'user'
+                        ? 'bg-emerald-600 text-white rounded-br-sm'
+                        : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-sm',
+                    )}
+                  >
+                    {message.text}
+                    {message.model && <div className="mt-1 text-[9px] font-mono text-zinc-600">{message.model}</div>}
+                  </div>
+                </div>
+              ))}
+
+              {busy && (
+                <div className="flex justify-start">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl rounded-bl-sm px-3 py-2 flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                    <span className="text-[11px] text-zinc-500">Waiting for the model…</span>
+                  </div>
+                </div>
+              )}
+
+              {error && !busy && (
+                <div className="text-[10px] text-rose-400 border border-rose-500/30 rounded-md px-2 py-1.5 bg-rose-500/5">{error}</div>
+              )}
+
+              <div ref={endRef} />
+            </div>
+
+            <footer className="p-2 border-t border-zinc-800 flex items-center gap-2 bg-zinc-950">
+              <button
+                onClick={toggleListening}
+                disabled={!recognitionRef.current}
+                className={cn(
+                  'p-2 rounded-full border transition-colors disabled:opacity-30',
+                  listening ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-emerald-300',
+                )}
+                title={recognitionRef.current ? 'Dictate' : 'Speech recognition is unavailable in this browser'}
+              >
+                {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void send();
+                }}
+                placeholder={aiReady ? 'Ask Gaia…' : 'Configure a Gemini key first'}
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-2 text-xs text-zinc-100 outline-none focus:border-emerald-500/40"
+              />
+              {speaking && (
+                <button onClick={stopSpeaking} className="text-[10px] text-rose-400 hover:underline shrink-0">
+                  stop
+                </button>
+              )}
+            </footer>
+
+            <div className="px-3 pb-2 bg-zinc-950">
+              <div className="text-[9px] font-mono text-zinc-700 truncate">
+                node {nodeId.slice(0, 8)} · {miner.running ? `mining at ${miner.hashrate.toLocaleString()} H/s` : 'miner idle'}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
